@@ -1,0 +1,26 @@
+{
+    "playbook-sync-cocos-plugin": {
+        "description": "playbook-sync-cocos-plugin",
+        "git": "git@github.com:wenext-limited/playbook-sync-cocos-plugin.git"
+    },
+    "figma2prefab": {
+        "description": "Figma to Cocos Creator prefab converter",
+        "git": "git@github.com:wenext-limited/cocos-extension-figma2prefab.git"
+    },
+    "oops-plugin-excel-to-json": {
+        "description": "oops plugin excel to json",
+        "git": "git@github.com:wenext-limited/oops-plugin-excel-to-json.git"
+    },
+    "oops-plugin-framework": {
+        "description": "oops plugin framework",
+        "git": "git@github.com:wenext-limited/oops-plugin-framework.git"
+    },
+    "wenext-cocos-builder": {
+        "description": "wenext cocos builder",
+        "git": "git@github.com:wenext-limited/cocos-extension-builder.git"
+    },
+    "wsdk": {
+        "description": "wsdk",
+        "git": "git@github.com:wenext-limited/cocos-game-wsdk.git"
+    }
+}

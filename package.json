@@ -1,0 +1,76 @@
+{
+    "package_version": 2,
+    "version": "1.0.0",
+    "name": "extensions-manager",
+    "description": "i18n:extensions-manager.description",
+    "main": "./dist/main.js",
+    "devDependencies": {
+        "@types/node": "^16.18.126",
+        "typescript": "^4.3.4"
+    },
+    "panels": {
+        "default": {
+            "title": "i18n:extensions-manager.panel_title",
+            "type": "dockable",
+            "main": "dist/panels/default",
+            "size": {
+                "min-width": 450,
+                "min-height": 400,
+                "width": 680,
+                "height": 550
+            }
+        }
+    },
+    "contributions": {
+        "menu": [
+            {
+                "path": "扩展",
+                "label": "wenext扩展管理器",
+                "message": "open-panel"
+            }
+        ],
+        "messages": {
+            "open-panel": {
+                "methods": [
+                    "openPanel"
+                ]
+            },
+            "list-all": {
+                "methods": [
+                    "listAll"
+                ]
+            },
+            "list-project": {
+                "methods": [
+                    "listProject"
+                ]
+            },
+            "install-extension": {
+                "methods": [
+                    "installExtension"
+                ]
+            },
+            "uninstall-extension": {
+                "methods": [
+                    "uninstallExtension"
+                ]
+            },
+            "sync-all": {
+                "methods": [
+                    "syncAll"
+                ]
+            },
+            "fetch-tags": {
+                "methods": [
+                    "fetchTags"
+                ]
+            }
+        }
+    },
+    "author": "wenext",
+    "editor": ">=3.7.3",
+    "scripts": {
+        "build": "tsc -b",
+        "watch": "tsc -w"
+    }
+}

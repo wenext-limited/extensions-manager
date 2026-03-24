@@ -1,0 +1,241 @@
+/* ─── 基础布局 ─── */
+.ext-manager {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #ccc;
+    background: #252526;
+    box-sizing: border-box;
+}
+
+/* ─── 工具栏 ─── */
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #3c3c3c;
+    flex-shrink: 0;
+}
+
+.toolbar h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-label {
+    font-size: 12px;
+    color: #999;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ─── 按钮 ─── */
+.btn {
+    padding: 4px 12px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #333;
+    color: #ccc;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn:hover {
+    background: #444;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #0e639c;
+    border-color: #0e639c;
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: #1177bb;
+}
+
+.btn-danger {
+    background: #6c2020;
+    border-color: #6c2020;
+    color: #fff;
+}
+
+.btn-danger:hover {
+    background: #8b2e2e;
+}
+
+.btn-small {
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+.btn-install {
+    background: #2ea043;
+    border-color: #2ea043;
+    color: #fff;
+}
+
+.btn-install:hover {
+    background: #3cb854;
+}
+
+/* ─── 扩展列表 ─── */
+.ext-list {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    background: #1e1e1e;
+}
+
+.loading {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+}
+
+/* ─── 单个扩展条目 ─── */
+.ext-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid #2d2d2d;
+}
+
+.ext-item:last-child {
+    border-bottom: none;
+}
+
+.ext-item:hover {
+    background: #2a2d2e;
+}
+
+.ext-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ext-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.ext-desc {
+    font-size: 11px;
+    color: #888;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ext-version {
+    margin: 0 16px;
+    text-align: center;
+    min-width: 100px;
+    flex-shrink: 0;
+}
+
+.ext-version-text {
+    font-size: 12px;
+    color: #999;
+}
+
+.ext-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ─── 状态标签 ─── */
+.status-badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.status-synced {
+    background: #1a3a1a;
+    color: #4ec94e;
+}
+
+.status-need-update {
+    background: #3a3a1a;
+    color: #c9c94e;
+}
+
+.status-not-installed {
+    background: #2a2a2a;
+    color: #888;
+}
+
+/* ─── 版本下拉列表 ─── */
+.version-select {
+    min-width: 90px;
+    max-width: 120px;
+    padding: 3px 6px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #333;
+    color: #ccc;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.version-select:focus {
+    border-color: #0e639c;
+    outline: none;
+}
+
+/* ─── 日志区域 ─── */
+.log-section {
+    margin-top: 12px;
+    flex-shrink: 0;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #999;
+}
+
+#log-output {
+    width: 100%;
+    height: 100px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    background: #1a1a1a;
+    color: #aaa;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    padding: 6px 8px;
+    resize: vertical;
+    box-sizing: border-box;
+}

@@ -1,0 +1,29 @@
+<div class="ext-manager">
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <h2>wenext扩展管理器</h2>
+        </div>
+        <div class="toolbar-right">
+            <label class="toggle-label">
+                <input type="checkbox" id="show-all"> 显示全部可用
+            </label>
+            <button id="btn-sync" class="btn btn-primary" title="按 extensions.json 同步全部">同步全部</button>
+            <button id="btn-refresh" class="btn" title="刷新列表">刷新</button>
+        </div>
+    </div>
+
+    <!-- 扩展列表 -->
+    <div id="ext-list" class="ext-list">
+        <div class="loading">加载中...</div>
+    </div>
+
+    <!-- 底部日志区域 -->
+    <div class="log-section">
+        <div class="log-header">
+            <span>操作日志</span>
+            <button id="btn-clear-log" class="btn btn-small">清空</button>
+        </div>
+        <textarea id="log-output" readonly></textarea>
+    </div>
+</div>
