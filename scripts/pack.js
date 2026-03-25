@@ -70,39 +70,3 @@ try {
     console.error('>>> 打包失败。');
     process.exit(1);
 }
-    while (stack.length > 0) {
-        const cur = stack.pop();
-        toDelete.push(cur);
-        if (fs.existsSync(cur) && fs.statSync(cur).isDirectory()) {
-            for (const child of fs.readdirSync(cur)) {
-                stack.push(path.join(cur, child));
-            }
-        }
-    }
-    // 逆序删除（先删叶子）
-    for (let i = toDelete.length - 1; i >= 0; i--) {
-        const p = toDelete[i];
-        if (!fs.existsSync(p)) continue;
-        if (fs.statSync(p).isDirectory()) {
-            fs.rmdirSync(p);
-        } else {
-            fs.unlinkSync(p);
-        }
-    }
-}
-
-/** 递归复制目录，skip 列表中的路径不复制 */
-function copyDirSync(src, dest, skip = []) {
-    fs.mkdirSync(dest, { recursive: true });
-    for (const child of fs.readdirSync(src, { withFileTypes: true })) {
-        const srcPath = path.join(src, child.name);
-        const destPath = path.join(dest, child.name);
-        if (skip.includes(srcPath)) continue;
-        if (child.name === '_pack_tmp') continue;
-        if (child.isDirectory()) {
-            copyDirSync(srcPath, destPath, skip);
-        } else {
-            fs.copyFileSync(srcPath, destPath);
-        }
-    }
-}

@@ -25,6 +25,7 @@ module.exports = Editor.Panel.define({
         logOutput: '#log-output',
         btnClearLog: '#btn-clear-log',
     },
+
     methods: {
         log(message: string) {
             const el = this.$.logOutput as HTMLTextAreaElement;
@@ -34,10 +35,33 @@ module.exports = Editor.Panel.define({
             el.scrollTop = el.scrollHeight;
         },
 
-        async refreshList() {
+        /** 防抖刷新（300ms），首次加载立即执行 */
+        refreshList() {
+            if ((this as any)._refreshTimer) {
+                clearTimeout((this as any)._refreshTimer);
+            }
+            if ((this as any)._isFirstLoad) {
+                (this as any)._isFirstLoad = false;
+                this._doRefreshList();
+            } else {
+                (this as any)._refreshTimer = setTimeout(() => {
+                    this._doRefreshList();
+                }, 300);
+            }
+        },
+
+        /** 实际刷新逻辑：无闪烁 DOM 更新 */
+        async _doRefreshList() {
             const showAll = (this.$.showAll as HTMLInputElement).checked;
             const listEl = this.$.extList as HTMLElement;
-            listEl.innerHTML = '<div class="loading">加载中...</div>';
+
+            // 首次加载时才显示 "加载中..."
+            const isEmptyList = listEl.children.length === 0 ||
+                (listEl.children.length === 1 && listEl.children[0].classList.contains('loading'));
+
+            if (isEmptyList) {
+                listEl.innerHTML = '<div class="loading">加载中...</div>';
+            }
 
             try {
                 const msgName = showAll ? 'list-all' : 'list-project';
@@ -48,10 +72,15 @@ module.exports = Editor.Panel.define({
                     return;
                 }
 
-                listEl.innerHTML = '';
+                // 用 DocumentFragment 构建新列表，然后一次性替换
+                const fragment = document.createDocumentFragment();
                 for (const ext of extensions) {
-                    listEl.appendChild(this.createExtItem(ext));
+                    fragment.appendChild(this.createExtItem(ext));
                 }
+
+                // 一次性替换所有子节点（无闪烁）
+                listEl.innerHTML = '';
+                listEl.appendChild(fragment);
             } catch (err: any) {
                 listEl.innerHTML = `<div class="loading">加载失败: ${err.message || err}</div>`;
             }
@@ -60,6 +89,12 @@ module.exports = Editor.Panel.define({
         createExtItem(ext: ExtensionInfo): HTMLElement {
             const item = document.createElement('div');
             item.className = 'ext-item';
+            item.dataset.extName = ext.name;
+
+            // 若当前正在操作，加上 loading 样式
+            if ((this as any)._operatingItems && (this as any)._operatingItems.has(ext.name)) {
+                item.classList.add('item-loading');
+            }
 
             // ── 信息区 ──
             const info = document.createElement('div');
@@ -141,18 +176,19 @@ module.exports = Editor.Panel.define({
                 vSelect.appendChild(defaultOpt);
                 actions.appendChild(vSelect);
 
-                // 异步加载版本列表
-                this.loadVersionsForSelect(ext.name, vSelect, ext.requiredVersion);
-
-                // 安装/更新按钮
+                // 安装/更新按钮（立即可用，不等版本加载）
                 const actionBtn = document.createElement('button');
                 actionBtn.className = ext.status === 'need_update' ? 'btn btn-primary' : 'btn btn-install';
                 actionBtn.textContent = ext.status === 'need_update' ? '更新' : '安装';
+                actionBtn.disabled = false;
                 actionBtn.addEventListener('click', () => {
                     const ver = vSelect.value.trim();
                     this.doInstall(ext.name, ver);
                 });
                 actions.appendChild(actionBtn);
+
+                // 异步加载版本列表（后台填充下拉框，不阻塞按钮）
+                this.loadVersionsForSelect(ext.name, vSelect, ext.requiredVersion);
             }
 
             if (ext.status === 'need_update' || ext.status === 'synced' || ext.status === 'not_in_manifest') {
@@ -169,10 +205,15 @@ module.exports = Editor.Panel.define({
             return item;
         },
 
-        /** 异步加载某个扩展的所有可用版本到下拉列表 */
-        async loadVersionsForSelect(name: string, selectEl: HTMLSelectElement, currentVersion: string | null) {
+        /** 异步加载某个扩展的所有可用版本到下拉列表（纯后台操作，不阻塞 UI） */
+        async loadVersionsForSelect(
+            name: string,
+            selectEl: HTMLSelectElement,
+            currentVersion: string | null,
+        ) {
             try {
                 const tags: string[] = await Editor.Message.request('extensions-manager', 'fetch-tags', name);
+
                 if (!tags || tags.length === 0) return;
 
                 // 清空旧选项
@@ -199,7 +240,7 @@ module.exports = Editor.Panel.define({
         async doInstall(name: string, version: string) {
             const target = version ? `${name}@${version}` : name;
             this.log(`安装 ${target} ...`);
-            this.setButtonsEnabled(false);
+            this._setItemLoading(name, true, '安装中...');
 
             try {
                 const result = await Editor.Message.request('extensions-manager', 'install-extension', target);
@@ -212,13 +253,13 @@ module.exports = Editor.Panel.define({
                 this.log(`✗ ${name} 安装异常: ${err.message || err}`);
             }
 
-            this.setButtonsEnabled(true);
+            this._setItemLoading(name, false);
             this.refreshList();
         },
 
         async doUninstall(name: string) {
             this.log(`卸载 ${name} ...`);
-            this.setButtonsEnabled(false);
+            this._setItemLoading(name, true, '卸载中...');
 
             try {
                 const result = await Editor.Message.request('extensions-manager', 'uninstall-extension', name);
@@ -231,7 +272,7 @@ module.exports = Editor.Panel.define({
                 this.log(`✗ ${name} 卸载异常: ${err.message || err}`);
             }
 
-            this.setButtonsEnabled(true);
+            this._setItemLoading(name, false);
             this.refreshList();
         },
 
@@ -254,6 +295,31 @@ module.exports = Editor.Panel.define({
             this.refreshList();
         },
 
+        /** 设置单个扩展条目的 loading 状态 */
+        _setItemLoading(name: string, loading: boolean, btnText?: string) {
+            if (loading) {
+                (this as any)._operatingItems.add(name);
+            } else {
+                (this as any)._operatingItems.delete(name);
+            }
+
+            const listEl = this.$.extList as HTMLElement;
+            const item = listEl.querySelector(`[data-ext-name="${name}"]`) as HTMLElement;
+            if (!item) return;
+
+            if (loading) {
+                item.classList.add('item-loading');
+                // 禁用该条目的所有按钮，并更新文字
+                const btns = item.querySelectorAll('button');
+                btns.forEach((btn: HTMLButtonElement) => {
+                    btn.disabled = true;
+                    if (btnText) btn.textContent = btnText;
+                });
+            } else {
+                item.classList.remove('item-loading');
+            }
+        },
+
         setButtonsEnabled(enabled: boolean) {
             const btns = (this.$.extList as HTMLElement).querySelectorAll('button');
             btns.forEach((btn: HTMLButtonElement) => btn.disabled = !enabled);
@@ -262,6 +328,11 @@ module.exports = Editor.Panel.define({
     },
 
     ready() {
+        // 初始化实例属性（定义在顶层的属性不会自动挂到 this 上）
+        (this as any)._refreshTimer = null;
+        (this as any)._isFirstLoad = true;
+        (this as any)._operatingItems = new Set<string>();
+
         (this.$.showAll as HTMLInputElement).addEventListener('change', () => {
             this.refreshList();
         });
