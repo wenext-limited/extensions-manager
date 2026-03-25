@@ -1,12 +1,13 @@
 /**
  * 仅打包（不编译），用于调试或 dist/ 已是最新时快速出包
  * 用法: node scripts/_pack_only.js
+ *
+ * 使用纯 Node.js + zlib 生成标准 ZIP（正斜杠路径），兼容 Cocos Editor。
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { execSync } = require('child_process');
+const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
@@ -35,37 +36,27 @@ if (!fs.existsSync(path.join(distDir, 'main.js'))) {
 // 删除旧 zip
 if (fs.existsSync(outZip)) {
     fs.unlinkSync(outZip);
-    console.log(`[清理] 已删除旧 zip: ${outZip}`);
 }
 
-// 使用系统临时目录，避免与项目内残留目录冲突
-const tmpDir = path.join(os.tmpdir(), `em-pack-${Date.now()}`);
-const TARGET = path.join(tmpDir, 'extensions-manager');
-fs.mkdirSync(TARGET, { recursive: true });
+// 收集所有要打包的文件（绝对路径 → zip 内相对路径，均用正斜杠）
+/** @type {{ absPath: string; zipEntry: string }[]} */
+const files = [];
 
-console.log(`[复制] 开始复制文件到临时目录...`);
 for (const entry of INCLUDE) {
     const src = path.join(ROOT, entry);
-    const dest = path.join(TARGET, entry);
     if (!fs.existsSync(src)) {
         console.warn(`  跳过不存在的: ${entry}`);
         continue;
     }
     if (fs.statSync(src).isDirectory()) {
-        copyDirSync(src, dest, [outZip]);
+        collectFiles(src, `extensions-manager/${entry}`);
     } else {
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(src, dest);
+        files.push({ absPath: src, zipEntry: `extensions-manager/${entry}` });
     }
-    console.log(`  ✓ ${entry}`);
 }
 
-console.log(`[压缩] 正在生成 ${zipName} ...`);
-const cmd = `powershell -NoProfile -NonInteractive -Command "Compress-Archive -Path '${TARGET}' -DestinationPath '${outZip}' -Force"`;
-execSync(cmd, { stdio: 'inherit' });
-
-// 清理临时目录
-try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+console.log(`[打包] 收集到 ${files.length} 个文件，正在写入 ${zipName} ...`);
+writeZip(outZip, files);
 
 const sizeKB = (fs.statSync(outZip).size / 1024).toFixed(1);
 console.log(`\n✅ 完成！输出: ${outZip} (${sizeKB} KB)`);
@@ -73,30 +64,145 @@ console.log('把此 zip 拖入 Cocos Creator 编辑器即可安装。');
 
 // ─── 工具函数 ─────────────────────────────────────────────────
 
-/** 使用系统命令删除目录，可处理 Windows 超长路径 */
-function forceDeleteDir(dirPath) {
-    if (!fs.existsSync(dirPath)) return;
-    try {
-        fs.rmSync(dirPath, { recursive: true, force: true });
-    } catch {
-        try {
-            execSync(`cmd /c rd /s /q "${dirPath}"`, { stdio: 'ignore' });
-        } catch { /* best-effort */ }
+/** 递归收集目录中的所有文件 */
+function collectFiles(dirAbs, zipBase) {
+    for (const child of fs.readdirSync(dirAbs, { withFileTypes: true })) {
+        // 跳过旧 zip 本身及临时目录
+        if (child.name === '_pack_tmp') continue;
+        if (child.name === zipName && dirAbs === distDir) continue;
+        const childAbs = path.join(dirAbs, child.name);
+        const childZip = `${zipBase}/${child.name}`;
+        if (child.isDirectory()) {
+            collectFiles(childAbs, childZip);
+        } else {
+            files.push({ absPath: childAbs, zipEntry: childZip });
+        }
     }
 }
 
-function copyDirSync(src, dest, skip = []) {
-    fs.mkdirSync(dest, { recursive: true });
-    for (const child of fs.readdirSync(src, { withFileTypes: true })) {
-        const srcPath = path.join(src, child.name);
-        const destPath = path.join(dest, child.name);
-        // 跳过明确排除的路径及临时工作目录
-        if (skip.includes(srcPath)) continue;
-        if (child.name === '_pack_tmp') continue;
-        if (child.isDirectory()) {
-            copyDirSync(srcPath, destPath, skip);
-        } else {
-            fs.copyFileSync(srcPath, destPath);
-        }
+/**
+ * 用纯 Node.js 写出标准 ZIP 文件（DEFLATE 压缩，正斜杠路径）。
+ * ZIP 格式参考: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+ * @param {string} outPath
+ * @param {{ absPath: string; zipEntry: string }[]} entries
+ */
+function writeZip(outPath, entries) {
+    /** @type {{ localHeaderOffset: number; entry: string; crc: number; compressedSize: number; uncompressedSize: number; data: Buffer }[]} */
+    const records = [];
+    const parts = [];
+    let offset = 0;
+
+    for (const { absPath, zipEntry } of entries) {
+        const raw = fs.readFileSync(absPath);
+        const compressed = zlib.deflateRawSync(raw);
+        // 如果压缩后更大，则用 STORE 方式
+        const useStore = compressed.length >= raw.length;
+        const data = useStore ? raw : compressed;
+        const method = useStore ? 0 : 8;
+        const crc = crc32(raw);
+
+        const nameBytes = Buffer.from(zipEntry, 'utf8');
+        const localHeader = makeLocalHeader(nameBytes, method, crc, data.length, raw.length);
+
+        records.push({
+            localHeaderOffset: offset,
+            entry: zipEntry,
+            nameBytes,
+            crc,
+            compressedSize: data.length,
+            uncompressedSize: raw.length,
+            method,
+        });
+
+        parts.push(localHeader, data);
+        offset += localHeader.length + data.length;
     }
+
+    // 中央目录
+    const cdParts = [];
+    let cdSize = 0;
+    for (const r of records) {
+        const cd = makeCentralDir(r.nameBytes, r.method, r.crc, r.compressedSize, r.uncompressedSize, r.localHeaderOffset);
+        cdParts.push(cd);
+        cdSize += cd.length;
+    }
+
+    // 中央目录结束记录
+    const eocd = makeEOCD(records.length, cdSize, offset);
+
+    const allBuffers = [...parts, ...cdParts, eocd];
+    fs.writeFileSync(outPath, Buffer.concat(allBuffers));
+}
+
+function makeLocalHeader(nameBytes, method, crc, compressedSize, uncompressedSize) {
+    const buf = Buffer.alloc(30 + nameBytes.length);
+    buf.writeUInt32LE(0x04034b50, 0);  // Local file header signature
+    buf.writeUInt16LE(20, 4);           // Version needed
+    buf.writeUInt16LE(0, 6);            // General purpose bit flag
+    buf.writeUInt16LE(method, 8);       // Compression method
+    buf.writeUInt16LE(0, 10);           // Last mod time
+    buf.writeUInt16LE(0, 12);           // Last mod date
+    buf.writeUInt32LE(crc >>> 0, 14);   // CRC-32
+    buf.writeUInt32LE(compressedSize, 18);
+    buf.writeUInt32LE(uncompressedSize, 22);
+    buf.writeUInt16LE(nameBytes.length, 26);
+    buf.writeUInt16LE(0, 28);           // Extra field length
+    nameBytes.copy(buf, 30);
+    return buf;
+}
+
+function makeCentralDir(nameBytes, method, crc, compressedSize, uncompressedSize, localOffset) {
+    const buf = Buffer.alloc(46 + nameBytes.length);
+    buf.writeUInt32LE(0x02014b50, 0);  // Central directory signature
+    buf.writeUInt16LE(20, 4);           // Version made by
+    buf.writeUInt16LE(20, 6);           // Version needed
+    buf.writeUInt16LE(0, 8);            // General purpose bit flag
+    buf.writeUInt16LE(method, 10);      // Compression method
+    buf.writeUInt16LE(0, 12);           // Last mod time
+    buf.writeUInt16LE(0, 14);           // Last mod date
+    buf.writeUInt32LE(crc >>> 0, 16);   // CRC-32
+    buf.writeUInt32LE(compressedSize, 20);
+    buf.writeUInt32LE(uncompressedSize, 24);
+    buf.writeUInt16LE(nameBytes.length, 28);
+    buf.writeUInt16LE(0, 30);           // Extra field length
+    buf.writeUInt16LE(0, 32);           // File comment length
+    buf.writeUInt16LE(0, 34);           // Disk number start
+    buf.writeUInt16LE(0, 36);           // Internal file attributes
+    buf.writeUInt32LE(0, 38);           // External file attributes
+    buf.writeUInt32LE(localOffset, 42); // Offset of local header
+    nameBytes.copy(buf, 46);
+    return buf;
+}
+
+function makeEOCD(numEntries, cdSize, cdOffset) {
+    const buf = Buffer.alloc(22);
+    buf.writeUInt32LE(0x06054b50, 0);  // EOCD signature
+    buf.writeUInt16LE(0, 4);            // Disk number
+    buf.writeUInt16LE(0, 6);            // Start disk number
+    buf.writeUInt16LE(numEntries, 8);   // Entries on this disk
+    buf.writeUInt16LE(numEntries, 10);  // Total entries
+    buf.writeUInt32LE(cdSize, 12);      // Central directory size
+    buf.writeUInt32LE(cdOffset, 16);    // Central directory offset
+    buf.writeUInt16LE(0, 20);           // Comment length
+    return buf;
+}
+
+/** CRC-32 实现 */
+function crc32(buf) {
+    // 构造查找表（仅第一次调用时）
+    if (!crc32._table) {
+        const t = new Uint32Array(256);
+        for (let i = 0; i < 256; i++) {
+            let c = i;
+            for (let j = 0; j < 8; j++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+            t[i] = c;
+        }
+        crc32._table = t;
+    }
+    const table = crc32._table;
+    let crc = 0xffffffff;
+    for (let i = 0; i < buf.length; i++) {
+        crc = table[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
 }
