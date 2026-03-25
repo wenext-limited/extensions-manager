@@ -60,94 +60,16 @@ if (fs.existsSync(staleInDist)) {
 // ─── 步骤 3：生成 zip ──────────────────────────────────
 console.log(`>>> 打包 ${zipName} ...`);
 
-// 使用 archiver 或回退到系统命令
+// 调用 _pack_only.js 生成正确的纯 Node.js ZIP，避免平台兼容性问题
 try {
-    require.resolve('archiver');
-    packWithArchiver();
-} catch {
-    // archiver 不可用，回退到系统命令
-    packWithSystemCmd();
-}
-
-function packWithArchiver() {
-    const archiver = require('archiver');
-    const output = createWriteStream(outZip);
-    const archive = archiver('zip', { zlib: { level: 9 } });
-
-    output.on('close', () => {
-        const sizeKB = (archive.pointer() / 1024).toFixed(1);
-        console.log(`>>> 完成：${outZip} (${sizeKB} KB)`);
+    execSync(`node "${path.join(__dirname, '_pack_only.js')}"`, {
+        cwd: ROOT,
+        stdio: 'inherit'
     });
-
-    archive.on('error', (err) => { throw err; });
-    archive.pipe(output);
-
-    for (const entry of INCLUDE) {
-        const fullPath = path.join(ROOT, entry);
-        if (!fs.existsSync(fullPath)) {
-            console.warn(`  跳过不存在的: ${entry}`);
-            continue;
-        }
-        if (entry.endsWith('/')) {
-            archive.directory(fullPath, `extensions-manager/${entry.replace(/\/$/, '')}`);
-        } else {
-            archive.file(fullPath, { name: `extensions-manager/${entry}` });
-        }
-    }
-
-    archive.finalize();
+} catch (err) {
+    console.error('>>> 打包失败。');
+    process.exit(1);
 }
-
-function packWithSystemCmd() {
-    // 使用系统临时目录，避免与项目内残留目录冲突
-    const tmpDir = path.join(os.tmpdir(), `em-pack-${Date.now()}`);
-    const targetDir = path.join(tmpDir, 'extensions-manager');
-    fs.mkdirSync(targetDir, { recursive: true });
-
-    // 复制文件（dist/ 只复制编译产物，跳过 zip 自身）
-    for (const entry of INCLUDE) {
-        const entryName = entry.replace(/\/$/, '');
-        const src = path.join(ROOT, entryName);
-        const dest = path.join(targetDir, entryName);
-        if (!fs.existsSync(src)) {
-            console.warn(`  跳过不存在的: ${entry}`);
-            continue;
-        }
-        if (fs.statSync(src).isDirectory()) {
-            copyDirSync(src, dest, [outZip]);
-        } else {
-            fs.mkdirSync(path.dirname(dest), { recursive: true });
-            fs.copyFileSync(src, dest);
-        }
-    }
-
-    // 删除旧 zip
-    if (fs.existsSync(outZip)) fs.unlinkSync(outZip);
-
-    // 压缩
-    if (process.platform === 'win32') {
-        execSync(
-            `powershell -NoProfile -Command "Compress-Archive -Path '${targetDir}' -DestinationPath '${outZip}' -Force"`,
-            { stdio: 'inherit' }
-        );
-    } else {
-        execSync(`zip -r "${outZip}" "extensions-manager"`, {
-            cwd: tmpDir,
-            stdio: 'inherit',
-        });
-    }
-
-    // 清理临时目录
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
-
-    const sizeKB = (fs.statSync(outZip).size / 1024).toFixed(1);
-    console.log(`>>> 完成：${outZip} (${sizeKB} KB)`);
-}
-
-/** 非递归删除目录（避免大目录栈溢出） */
-function deleteDirSync(dirPath) {
-    const stack = [dirPath];
-    const toDelete = [];
     while (stack.length > 0) {
         const cur = stack.pop();
         toDelete.push(cur);
