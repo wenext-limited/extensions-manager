@@ -24,8 +24,8 @@
     "contributions": {
         "menu": [
             {
-                "path": "扩展",
-                "label": "wenext扩展管理器",
+                "path": "扩展/wenext",
+                "label": "扩展管理器",
                 "message": "open-panel"
             }
         ],
@@ -70,7 +70,9 @@
     "author": "wenext",
     "editor": ">=3.7.3",
     "scripts": {
-        "build": "tsc -b",
-        "watch": "tsc -w"
+        "build": "tsc --project tsconfig.json",
+        "watch": "tsc -w",
+        "pack": "node scripts/pack.js",
+        "pack-only": "node scripts/_pack_only.js"
     }
 }

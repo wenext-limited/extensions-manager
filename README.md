@@ -26,11 +26,13 @@ Cocos Creator 编辑器插件，用于可视化管理项目内各扩展的安装
 | `not_installed` | 清单中存在但尚未安装 |
 | `not_in_manifest` | 已安装但不在项目清单中 |
 
-## 使用方式
+## 安装方式
 
-1. 将本插件放置于 Cocos Creator 项目的 `extensions/` 目录下
-2. 在编辑器菜单中选择 **扩展 → wenext扩展管理器** 打开面板
-3. 在面板中查看各扩展状态，按需安装或更新
+1. 从 [Releases](https://github.com/wenext-limited/extensions-manager/releases) 下载最新的 `extensions-manager-vX.X.X.zip`
+2. 解压 zip 包，将 `extensions-manager/` 目录放入 Cocos Creator 项目的 `extensions/` 目录下
+3. 重启编辑器或刷新扩展
+4. 在编辑器菜单中选择 **扩展 → wenext → 扩展管理器** 打开面板
+5. 在面板中查看各扩展状态，按需安装或更新
 
 ## 开发
 
@@ -45,6 +47,14 @@ Cocos Creator 编辑器插件，用于可视化管理项目内各扩展的安装
 npm install
 npm run build
 ```
+
+### 发布打包
+
+```bash
+npm run pack
+```
+
+会在 `dist/` 目录下生成 `extensions-manager-vX.X.X.zip`，可直接上传到 GitHub Releases 供用户下载。
 
 ### 目录结构
 

@@ -127,29 +127,6 @@ function runManagerCommand(args: string): { success: boolean; output: string } {
     }
 }
 
-// ─── git 自更新：拉取插件仓库最新代码 ────────────────────
-
-function syncPluginSelf(): void {
-    const pluginDir = getPluginDir();
-    const gitDir = path.join(pluginDir, '.git');
-    if (!fs.existsSync(gitDir)) {
-        console.log('[extensions-manager] 插件目录不是 git 仓库，跳过自更新');
-        return;
-    }
-    try {
-        console.log('[extensions-manager] 正在同步插件仓库最新数据...');
-        execSync('git pull --ff-only', {
-            cwd: pluginDir,
-            encoding: 'utf-8',
-            timeout: 30000,
-            stdio: 'pipe',
-        });
-        console.log('[extensions-manager] 插件仓库同步完成');
-    } catch (err: any) {
-        console.warn('[extensions-manager] 插件仓库同步失败（不影响使用）:', err.message);
-    }
-}
-
 // ─── 确保项目有 extensions.json ──────────────────────────
 
 function ensureManifest(): void {
@@ -241,10 +218,8 @@ export const methods: { [key: string]: (...args: any) => any } = {
 
 export function load() {
     console.log('[extensions-manager] 扩展管理器已加载');
-    // 自动同步插件仓库（异步，不阻塞编辑器启动）
     setTimeout(() => {
         try {
-            syncPluginSelf();
             ensureManifest();
         } catch (err: any) {
             console.warn('[extensions-manager] 初始化出错:', err.message);
