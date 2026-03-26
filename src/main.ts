@@ -58,14 +58,17 @@ function stripV(version: string): string {
     return version.startsWith('v') ? version.slice(1) : version;
 }
 
-/** 通过 SSH git clone（浅克隆）读取 registry.json，适用于已配置 SSH 密钥的环境 */
+/** 通过 SSH 部分克隆只拉取 registry.json，适用于已配置 SSH 密钥的环境 */
 async function fetchRegistryViaSSH(): Promise<string> {
     const tmpDir = path.join(os.tmpdir(), `ext-reg-${Date.now()}`);
     const repoSshUrl = 'git@github.com:wenext-limited/extensions-manager.git';
     try {
+        // --filter=blob:none: 跳过下载文件内容，只拉树结构；按需懒加载 blob
+        // --sparse: 仅检出根目录文件（registry.json 在根目录，会被懒加载下来）
+        // --depth 1: 浅克隆，不拉历史
         await execAsync(
-            `git clone --depth 1 --no-tags "${repoSshUrl}" "${tmpDir}"`,
-            { timeout: 60000 },
+            `git clone --filter=blob:none --sparse --depth 1 --no-tags "${repoSshUrl}" "${tmpDir}"`,
+            { timeout: 30000 },
         );
         const regPath = path.join(tmpDir, 'registry.json');
         if (!fs.existsSync(regPath)) throw new Error('registry.json not found in cloned repo');
