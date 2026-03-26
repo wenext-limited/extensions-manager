@@ -1,6 +1,6 @@
 {
     "package_version": 2,
-    "version": "1.0.1",
+    "version": "1.0.2",
     "name": "extensions-manager",
     "description": "i18n:extensions-manager.description",
     "main": "./dist/main.js",
