@@ -1,6 +1,6 @@
 {
     "package_version": 2,
-    "version": "1.0.0",
+    "version": "1.0.1",
     "name": "extensions-manager",
     "description": "i18n:extensions-manager.description",
     "main": "./dist/main.js",
@@ -69,6 +69,11 @@
                 "methods": [
                     "refreshRegistry"
                 ]
+            },
+            "open-extension-dir": {
+                "methods": [
+                    "openExtensionDir"
+                ]
             }
         }
     },
@@ -76,8 +81,6 @@
     "editor": ">=3.7.3",
     "scripts": {
         "build": "tsc --project tsconfig.json",
-        "watch": "tsc -w",
-        "pack": "node scripts/pack.js",
-        "pack-only": "node scripts/_pack_only.js"
+        "watch": "tsc -w"
     }
 }

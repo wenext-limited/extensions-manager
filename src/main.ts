@@ -3,8 +3,7 @@ import packageJSON from '../package.json';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec } from 'child_process';
-import * as https from 'https';
+import { exec, spawn } from 'child_process';
 
 // ─── 路径工具（延迟获取）───────────────────────────────────
 
@@ -31,11 +30,6 @@ function getExtensionsDir(): string {
 function getManagerScript(): string {
     return path.join(getProjectRoot(), 'extensions_update', 'extensions_manager.js');
 }
-
-// ─── 远程注册表 URL ──────────────────────────────────────
-
-const REGISTRY_REMOTE_URL = 'https://raw.githubusercontent.com/wenext-limited/extensions-manager/main/registry.json';
-const REGISTRY_API_URL = 'https://api.github.com/repos/wenext-limited/extensions-manager/contents/registry.json?ref=main';
 
 // ─── 工具函数 ────────────────────────────────────────────
 
@@ -64,68 +58,6 @@ function stripV(version: string): string {
     return version.startsWith('v') ? version.slice(1) : version;
 }
 
-/** 通过 HTTPS GET 获取远程文本内容（支持自定义请求头） */
-function httpsGet(url: string, timeout = 15000, extraHeaders?: Record<string, string>): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const parsedUrl = new URL(url);
-        const options: https.RequestOptions = {
-            hostname: parsedUrl.hostname,
-            path: parsedUrl.pathname + parsedUrl.search,
-            timeout,
-            headers: { 'User-Agent': 'extensions-manager', ...extraHeaders },
-        };
-        const req = https.get(options, (res) => {
-            if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
-                // 必须消费原始响应体，否则连接会挂起
-                res.resume();
-                const location = res.headers.location;
-                if (location) {
-                    httpsGet(location, timeout, extraHeaders).then(resolve, reject);
-                    return;
-                }
-                reject(new Error(`Redirect without location header`));
-                return;
-            }
-            if (res.statusCode !== 200) {
-                res.resume();
-                reject(new Error(`HTTP ${res.statusCode}`));
-                return;
-            }
-            let data = '';
-            res.setEncoding('utf-8');
-            res.on('data', (chunk: string) => { data += chunk; });
-            res.on('end', () => resolve(data));
-            res.on('error', reject);
-        });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-    });
-}
-
-/** Fallback: 通过 curl / PowerShell 下载文本（兼容各种环境） */
-async function httpsGetViaExec(url: string, authToken?: string): Promise<string> {
-    // 验证 token 格式，防止命令注入
-    if (authToken && !/^[a-zA-Z0-9_\-]+$/.test(authToken)) {
-        throw new Error('Invalid token format');
-    }
-    const curlAuth = authToken ? `-H "Authorization: token ${authToken}"` : '';
-    // 优先尝试 curl（Git for Windows 自带）
-    try {
-        const { stdout } = await execAsync(`curl -fsSL --max-time 15 ${curlAuth} "${url}"`, { timeout: 20000 });
-        if (stdout.trim()) return stdout.trim();
-    } catch { /* fall through */ }
-
-    // Fallback: PowerShell
-    const psAuth = authToken
-        ? `$headers = @{ Authorization = "token ${authToken}"; 'User-Agent' = 'extensions-manager' }; `
-        : `$headers = @{ 'User-Agent' = 'extensions-manager' }; `;
-    const { stdout } = await execAsync(
-        `powershell -NoProfile -Command "${psAuth}(Invoke-WebRequest -Uri '${url}' -UseBasicParsing -Headers $headers).Content"`,
-        { timeout: 20000 },
-    );
-    return stdout.trim();
-}
-
 /** 通过 SSH git clone（浅克隆）读取 registry.json，适用于已配置 SSH 密钥的环境 */
 async function fetchRegistryViaSSH(): Promise<string> {
     const tmpDir = path.join(os.tmpdir(), `ext-reg-${Date.now()}`);
@@ -143,74 +75,15 @@ async function fetchRegistryViaSSH(): Promise<string> {
     }
 }
 
-/** 从 GitHub 拉取最新 registry.json 并写入本地（多种方式依次尝试） */
+/** 从 GitHub 拉取最新 registry.json 并写入本地（仅 SSH） */
 async function fetchRemoteRegistry(): Promise<boolean> {
-    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
-    const authHeaders: Record<string, string> = token ? { Authorization: `token ${token}` } : {};
-    
-    // 添加时间戳防止 CDN 或本地网络缓存
-    const ts = Date.now();
-    const apiUrl = `${REGISTRY_API_URL}&t=${ts}`;
-    const rawUrl = `${REGISTRY_REMOTE_URL}?t=${ts}`;
-
-    // 构建多级尝试列表
-    const attempts: Array<{ name: string; fn: () => Promise<string> }> = [
-        {
-            name: 'GitHub API',
-            fn: () => httpsGet(apiUrl, 15000, {
-                ...authHeaders,
-                Accept: 'application/vnd.github.v3.raw',
-            }),
-        },
-        {
-            name: 'HTTPS raw.githubusercontent.com',
-            fn: () => httpsGet(rawUrl, 15000, { ...authHeaders }),
-        },
-        {
-            name: 'GHProxy (China)',
-            fn: () => httpsGet(`https://ghproxy.net/${rawUrl}`, 15000),
-        },
-        {
-            name: 'jsDelivr CDN',
-            fn: async () => {
-                try {
-                    // 主动清理 CDN 缓存以确保拉取到最新
-                    await httpsGet('https://purge.jsdelivr.net/gh/wenext-limited/extensions-manager@main/registry.json', 5000);
-                } catch { /* ignore */ }
-                return httpsGet(`https://cdn.jsdelivr.net/gh/wenext-limited/extensions-manager@main/registry.json?t=${ts}`, 10000);
-            },
-        },
-        {
-            name: 'curl / PowerShell',
-            fn: () => httpsGetViaExec(rawUrl, token || undefined),
-        },
-        {
-            name: 'SSH git clone',
-            fn: () => fetchRegistryViaSSH(),
-        },
-    ];
-
     let text = '';
-    for (const attempt of attempts) {
-        try {
-            const result = await attempt.fn();
-            if (result && result.trim()) {
-                text = result.trim();
-                console.log(`[extensions-manager] 通过 ${attempt.name} 拉取 registry 成功`);
-                break;
-            }
-        } catch (err: any) {
-            console.warn(`[extensions-manager] ${attempt.name} 拉取失败: ${err.message || err}`);
-        }
-    }
-
-    if (!text) {
-        console.warn('[extensions-manager] 所有远程拉取方式均失败，使用本地 registry.json');
-        if (token) {
-            console.warn('[extensions-manager] 提示: 已检测到 GITHUB_TOKEN，请确认 token 是否有效');
-        } else {
-            console.warn('[extensions-manager] 提示: 如需访问私有仓库，请设置环境变量 GITHUB_TOKEN');
-        }
+    try {
+        text = (await fetchRegistryViaSSH()).trim();
+        console.log('[extensions-manager] 通过 SSH git clone 拉取 registry 成功');
+    } catch (err: any) {
+        console.warn(`[extensions-manager] SSH git clone 拉取失败: ${err.message || err}`);
+        console.warn('[extensions-manager] 仅支持 SSH 拉取，已回退到本地 registry.json');
         return false;
     }
 
@@ -406,6 +279,76 @@ async function fetchTagsCached(name: string, gitUrl: string): Promise<string[]> 
     const tags = await fetchRemoteTags(gitUrl);
     tagsCache.set(name, { tags, time: Date.now() });
     return tags;
+}
+
+// ─── 自升级逻辑 ──────────────────────────────────────────
+
+/** 升级 extensions-manager 自身：将升级脚本写入临时目录并以独立进程执行 */
+async function selfUpgrade(version: string): Promise<{ success: boolean; output: string }> {
+    const registry = readJSON(getRegistryPath()) || {};
+    const ext = registry[packageJSON.name];
+    if (!ext?.git) {
+        return { success: false, output: 'registry.json 中未找到自身配置，无法自升级' };
+    }
+
+    const selfDir = getPluginDir();
+    const gitUrl = ext.git;
+
+    // 升级脚本：延迟 3 秒（等面板正常响应）后删除旧目录并 clone 新版本
+    const scriptContent = `
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const selfDir = ${JSON.stringify(selfDir)};
+const gitUrl = ${JSON.stringify(gitUrl)};
+const version = ${JSON.stringify(version)};
+setTimeout(() => {
+    try {
+        fs.rmSync(selfDir, { recursive: true, force: true });
+        const cloneCmd = version
+            ? \`git clone --branch "\${version}" --depth 1 "\${gitUrl}" "\${selfDir}"\`
+            : \`git clone --depth 1 "\${gitUrl}" "\${selfDir}"\`;
+        execSync(cloneCmd, {
+            stdio: 'pipe',
+            env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no' },
+        });
+    } catch (e) {
+        try {
+            fs.writeFileSync(path.join(os.tmpdir(), 'ext-upgrade-error.txt'), String(e), 'utf-8');
+        } catch {}
+    }
+}, 3000);
+`;
+
+    const tmpScript = path.join(os.tmpdir(), `ext-self-upgrade-${Date.now()}.js`);
+    fs.writeFileSync(tmpScript, scriptContent, 'utf-8');
+
+    // 查找系统 node 可执行文件
+    let nodePath = 'node';
+    try {
+        const whichCmd = process.platform === 'win32' ? 'where node' : 'which node';
+        const { stdout } = await execAsync(whichCmd, { timeout: 5000 });
+        nodePath = stdout.trim().split('\n')[0].trim();
+    } catch { /* 使用默认 'node' */ }
+
+    // 以 detached + unref 方式启动独立子进程，与编辑器进程解耦
+    const child = spawn(nodePath, [tmpScript], {
+        detached: true,
+        stdio: 'ignore',
+        env: {
+            ...process.env,
+            GIT_TERMINAL_PROMPT: '0',
+            GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
+        },
+    });
+    child.unref();
+
+    const verStr = version ? `@${version}` : '（最新版本）';
+    return {
+        success: true,
+        output: `自升级任务已提交${verStr}，正在后台执行...\n升级完成后请手动重新加载扩展（扩展菜单 → 扩展管理器 → 重新加载）`,
+    };
 }
 
 // ─── Fallback 安装逻辑（内置 git clone/checkout）─────────
@@ -611,6 +554,13 @@ export const methods: { [key: string]: (...args: any) => any } = {
 
     async installExtension(nameWithVersion: string): Promise<{ success: boolean; output: string }> {
         console.log(`[extensions-manager] install ${nameWithVersion}`);
+        const { name: installName, version: installVersion } = parseNameVersion(nameWithVersion);
+
+        // 自升级：不能 disable 自身，改用独立子进程执行
+        if (installName === packageJSON.name) {
+            return await selfUpgrade(installVersion);
+        }
+
         let result: { success: boolean; output: string };
         if (hasManagerScript()) {
             result = await runManagerCommand(`install ${nameWithVersion}`);
@@ -700,6 +650,25 @@ export const methods: { [key: string]: (...args: any) => any } = {
             return { success: true, output: `注册表已更新（${Object.keys(registry).length} 个扩展）` };
         }
         return { success: false, output: '拉取远程注册表失败，使用本地缓存' };
+    },
+
+    async openExtensionDir(name: string): Promise<{ success: boolean; output: string }> {
+        const extDir = path.join(getExtensionsDir(), name);
+        if (!fs.existsSync(extDir)) {
+            return { success: false, output: `扩展 "${name}" 尚未安装，目录不存在` };
+        }
+        try {
+            if (process.platform === 'darwin') {
+                exec(`open "${extDir}"`);
+            } else if (process.platform === 'win32') {
+                exec(`start "" "${extDir.replace(/\//g, '\\')}"`, { shell: true } as any);
+            } else {
+                exec(`xdg-open "${extDir}"`);
+            }
+            return { success: true, output: `已打开: ${extDir}` };
+        } catch (err: any) {
+            return { success: false, output: `打开目录失败: ${err.message || err}` };
+        }
     },
 };
 

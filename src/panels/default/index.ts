@@ -1,5 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+// @ts-ignore
+const pkgJson = require('../../../package.json');
 
 interface ExtensionInfo {
     name: string;
@@ -16,16 +18,7 @@ module.exports = Editor.Panel.define({
             if ((this as any)._isFirstLoad === false && this.log) {
                 this.log('面板已显示，正在从远程更新扩展注册表...');
                 (async () => {
-                    try {
-                        const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
-                        if (result.success) {
-                            this.log(`✓ ${result.output}`);
-                        } else {
-                            this.log(`⚠ ${result.output}`);
-                        }
-                    } catch (err: any) {
-                        this.log(`⚠ 更新注册表异常: ${err.message || err}`);
-                    }
+                    await this.tryRefreshRegistry();
                     this.refreshList();
                 })();
             }
@@ -41,9 +34,31 @@ module.exports = Editor.Panel.define({
         btnRefresh: '#btn-refresh',
         logOutput: '#log-output',
         btnClearLog: '#btn-clear-log',
+        ctxMenu: '#ctx-menu',
+        ctxOpenDir: '#ctx-open-dir',
     },
 
     methods: {
+        async tryRefreshRegistry() {
+            try {
+                const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
+                if (result?.success) {
+                    this.log(`✓ ${result.output}`);
+                } else if (result?.output) {
+                    this.log(`⚠ ${result.output}`);
+                }
+                return true;
+            } catch (err: any) {
+                const message = String(err?.message || err || '');
+                if (message.includes('Message does not exist')) {
+                    this.log('⚠ 当前扩展版本不支持远程刷新，已使用本地注册表');
+                    return false;
+                }
+                this.log(`⚠ 更新注册表异常: ${message}`);
+                return false;
+            }
+        },
+
         log(message: string) {
             const el = this.$.logOutput as HTMLTextAreaElement;
             if (!el) return;
@@ -219,6 +234,32 @@ module.exports = Editor.Panel.define({
             }
 
             item.appendChild(actions);
+
+            // 右键菜单绑定
+            item.addEventListener('contextmenu', (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const menu = (this as any)._ctxMenu as HTMLElement;
+                if (!menu) return;
+                (this as any)._ctxTarget = ext.name;
+
+                const openDirItem = menu.querySelector('#ctx-open-dir') as HTMLElement;
+                if (ext.installedVersion) {
+                    openDirItem.classList.remove('ctx-disabled');
+                } else {
+                    openDirItem.classList.add('ctx-disabled');
+                }
+
+                const mw = 150, mh = 38;
+                let x = e.clientX, y = e.clientY;
+                if (x + mw > window.innerWidth) x = window.innerWidth - mw - 4;
+                if (y + mh > window.innerHeight) y = window.innerHeight - mh - 4;
+
+                menu.style.left = x + 'px';
+                menu.style.top = y + 'px';
+                menu.style.display = 'block';
+            });
+
             return item;
         },
 
@@ -356,16 +397,7 @@ module.exports = Editor.Panel.define({
 
         (this.$.btnRefresh as HTMLButtonElement).addEventListener('click', async () => {
             this.log('正在从远程更新扩展注册表...');
-            try {
-                const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
-                if (result.success) {
-                    this.log(`✓ ${result.output}`);
-                } else {
-                    this.log(`⚠ ${result.output}`);
-                }
-            } catch (err: any) {
-                this.log(`⚠ 更新注册表异常: ${err.message || err}`);
-            }
+            await this.tryRefreshRegistry();
             this.refreshList();
         });
 
@@ -377,19 +409,42 @@ module.exports = Editor.Panel.define({
             (this.$.logOutput as HTMLTextAreaElement).value = '';
         });
 
+        // 显示插件自身版本号
+        const titleEl = document.querySelector('.toolbar-left h2') as HTMLElement;
+        if (titleEl) titleEl.textContent = `wenext扩展管理器 v${pkgJson.version}`;
+
+        // ── 右键菜单初始化 ──
+        const ctxMenu = this.$.ctxMenu as HTMLElement;
+        (this as any)._ctxMenu = ctxMenu;
+        (this as any)._ctxTarget = null;
+
+        document.addEventListener('click', () => { ctxMenu.style.display = 'none'; });
+        document.addEventListener('contextmenu', (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('.ext-item')) ctxMenu.style.display = 'none';
+        });
+
+        (this.$.ctxOpenDir as HTMLElement).addEventListener('click', (e: MouseEvent) => {
+            e.stopPropagation();
+            ctxMenu.style.display = 'none';
+            const name = (this as any)._ctxTarget as string;
+            if (!name) return;
+            Editor.Message.request('extensions-manager', 'open-extension-dir', name)
+                .then((result: any) => { if (!result.success) this.log(`⚠ ${result.output}`); })
+                .catch((err: any) => {
+                    const message = String(err?.message || err || '');
+                    if (message.includes('Message does not exist')) {
+                        this.log('⚠ 当前扩展版本不支持“打开目录”功能，请先重载扩展');
+                        return;
+                    }
+                    this.log(`⚠ 打开目录失败: ${message}`);
+                });
+        });
+
         // 初始加载：先拉取远程注册表，再刷新列表
         this.log('wenext扩展管理器已就绪');
         (async () => {
-            try {
-                const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
-                if (result.success) {
-                    this.log(`✓ ${result.output}`);
-                } else {
-                    this.log(`⚠ ${result.output}`);
-                }
-            } catch (err: any) {
-                this.log(`⚠ 更新注册表异常: ${err.message || err}`);
-            }
+            await this.tryRefreshRegistry();
             this.refreshList();
         })();
     },

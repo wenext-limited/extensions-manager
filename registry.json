@@ -24,7 +24,7 @@
         "git": "git@github.com:wenext-limited/cocos-game-wsdk.git"
     },
     "extensions-manager": {
-        "description": "wsdk",
+        "description": "extensions-manager",
         "git": "git@github.com:wenext-limited/extensions-manager.git"
     }
 }
