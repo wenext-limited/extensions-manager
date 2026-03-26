@@ -64,6 +64,11 @@
                 "methods": [
                     "fetchTags"
                 ]
+            },
+            "refresh-registry": {
+                "methods": [
+                    "refreshRegistry"
+                ]
             }
         }
     },

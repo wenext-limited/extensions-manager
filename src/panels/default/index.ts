@@ -12,7 +12,24 @@ interface ExtensionInfo {
 
 module.exports = Editor.Panel.define({
     listeners: {
-        show() { },
+        show() {
+            if ((this as any)._isFirstLoad === false && this.log) {
+                this.log('面板已显示，正在从远程更新扩展注册表...');
+                (async () => {
+                    try {
+                        const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
+                        if (result.success) {
+                            this.log(`✓ ${result.output}`);
+                        } else {
+                            this.log(`⚠ ${result.output}`);
+                        }
+                    } catch (err: any) {
+                        this.log(`⚠ 更新注册表异常: ${err.message || err}`);
+                    }
+                    this.refreshList();
+                })();
+            }
+        },
         hide() { },
     },
     template: readFileSync(join(__dirname, '../../../static/template/default/index.html'), 'utf-8'),
@@ -337,7 +354,18 @@ module.exports = Editor.Panel.define({
             this.refreshList();
         });
 
-        (this.$.btnRefresh as HTMLButtonElement).addEventListener('click', () => {
+        (this.$.btnRefresh as HTMLButtonElement).addEventListener('click', async () => {
+            this.log('正在从远程更新扩展注册表...');
+            try {
+                const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
+                if (result.success) {
+                    this.log(`✓ ${result.output}`);
+                } else {
+                    this.log(`⚠ ${result.output}`);
+                }
+            } catch (err: any) {
+                this.log(`⚠ 更新注册表异常: ${err.message || err}`);
+            }
             this.refreshList();
         });
 
@@ -349,9 +377,21 @@ module.exports = Editor.Panel.define({
             (this.$.logOutput as HTMLTextAreaElement).value = '';
         });
 
-        // 初始加载
-        this.refreshList();
+        // 初始加载：先拉取远程注册表，再刷新列表
         this.log('wenext扩展管理器已就绪');
+        (async () => {
+            try {
+                const result = await Editor.Message.request('extensions-manager', 'refresh-registry');
+                if (result.success) {
+                    this.log(`✓ ${result.output}`);
+                } else {
+                    this.log(`⚠ ${result.output}`);
+                }
+            } catch (err: any) {
+                this.log(`⚠ 更新注册表异常: ${err.message || err}`);
+            }
+            this.refreshList();
+        })();
     },
 
     beforeClose() { },

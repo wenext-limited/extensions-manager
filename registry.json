@@ -3,7 +3,7 @@
         "description": "playbook-sync-cocos-plugin",
         "git": "git@github.com:wenext-limited/playbook-sync-cocos-plugin.git"
     },
-    "figma2prefab": {
+    "figma2prefabtest2": {
         "description": "Figma to Cocos Creator prefab converter",
         "git": "git@github.com:wenext-limited/cocos-extension-figma2prefab.git"
     },
@@ -22,5 +22,9 @@
     "wsdk": {
         "description": "wsdk",
         "git": "git@github.com:wenext-limited/cocos-game-wsdk.git"
+    },
+    "extensions-manager": {
+        "description": "extensions-manager",
+        "git": "git@github.com:wenext-limited/extensions-manager.git"
     }
 }
