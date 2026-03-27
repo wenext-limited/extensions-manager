@@ -17,6 +17,13 @@
     --radius: 10px;
     --radius-sm: 8px;
     --sidebar-width: 162px;
+    /* 字体大小变量 */
+    --font-xs: 0.846em;   /* 11px @ 13px base */
+    --font-sm: 0.923em;   /* 12px @ 13px base */
+    --font-md: 1em;       /* 13px @ 13px base */
+    --font-lg: 1.077em;   /* 14px @ 13px base */
+    --font-xl: 1.154em;   /* 15px @ 13px base */
+    --font-2xl: 1.308em;  /* 17px @ 13px base */
 }
 
 /* ─── 浅色主题覆盖（明亮浅色背景）─── */
@@ -101,14 +108,14 @@
 }
 
 .brand-name {
-    font-size: 15px;
+    font-size: var(--font-xl);
     font-weight: 700;
     color: var(--text);
     letter-spacing: -0.02em;
 }
 
 .brand-version {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
     font-weight: 500;
 }
@@ -130,7 +137,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-md);
     font-weight: 500;
     text-align: left;
     font-family: inherit;
@@ -160,7 +167,7 @@ button.nav-item:not(:disabled) {
 }
 
 .nav-item-icon {
-    font-size: 14px;
+    font-size: var(--font-lg);
     width: 1.2em;
     text-align: center;
     opacity: 0.9;
@@ -181,7 +188,7 @@ button.nav-item:not(:disabled) {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     cursor: pointer;
     padding: 4px 6px;
     border-radius: 4px;
@@ -235,7 +242,7 @@ button.nav-item:not(:disabled) {
 
 .search-icon {
     color: var(--text-muted);
-    font-size: 15px;
+    font-size: var(--font-xl);
     line-height: 1;
     flex-shrink: 0;
 }
@@ -246,7 +253,7 @@ button.nav-item:not(:disabled) {
     border: none;
     background: transparent;
     color: var(--text);
-    font-size: 13px;
+    font-size: var(--font-md);
     outline: none;
 }
 
@@ -298,7 +305,7 @@ button.nav-item:not(:disabled) {
 .registry-sync-text {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
     line-height: 1.35;
 }
@@ -306,7 +313,7 @@ button.nav-item:not(:disabled) {
 .btn-registry-cancel {
     flex-shrink: 0;
     padding: 6px 12px;
-    font-size: 11px;
+    font-size: var(--font-xs);
 }
 
 .registry-sync-progress {
@@ -339,7 +346,7 @@ button.nav-item:not(:disabled) {
     border-radius: var(--radius-sm);
     background: var(--bg-card);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
@@ -400,7 +407,7 @@ button.nav-item:not(:disabled) {
 .btn-log-copy,
 .btn-log-clear {
     padding: 5px 12px;
-    font-size: 11px;
+    font-size: var(--font-xs);
 }
 
 /* ─── 核心系统版本行 ─── */
@@ -414,7 +421,7 @@ button.nav-item:not(:disabled) {
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
-    font-size: 12px;
+    font-size: var(--font-sm);
     flex-shrink: 0;
 }
 
@@ -429,7 +436,7 @@ button.nav-item:not(:disabled) {
 .core-version-label {
     color: var(--text-muted);
     font-weight: 500;
-    font-size: 11px;
+    font-size: var(--font-xs);
     white-space: nowrap;
 }
 
@@ -441,7 +448,7 @@ button.nav-item:not(:disabled) {
     border-radius: 4px;
     background: var(--accent-glow);
     color: var(--accent);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
     font-variant-numeric: tabular-nums;
@@ -456,7 +463,7 @@ button.nav-item:not(:disabled) {
     align-items: center;
     gap: 8px;
     margin-left: auto;
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
 }
 
@@ -476,7 +483,7 @@ button.nav-item:not(:disabled) {
 
 .section-title {
     margin: 0 0 10px;
-    font-size: 14px;
+    font-size: var(--font-lg);
     font-weight: 600;
     color: var(--text);
     flex-shrink: 0;
@@ -510,7 +517,7 @@ button.nav-item:not(:disabled) {
     padding: 32px 16px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-md);
     background: var(--bg-card);
     border-radius: var(--radius);
     border: 1px dashed var(--border-subtle);
@@ -554,7 +561,7 @@ button.nav-item:not(:disabled) {
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    font-size: 30px;
+    font-size: 2.308em;
     font-weight: 700;
     line-height: 1;
     letter-spacing: -0.04em;
@@ -579,14 +586,14 @@ button.nav-item:not(:disabled) {
 }
 
 .ext-name {
-    font-size: 14px;
+    font-size: var(--font-lg);
     font-weight: 600;
     color: var(--text);
     word-break: break-all;
 }
 
 .ext-desc {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
     line-height: 1.45;
     display: -webkit-box;
@@ -614,7 +621,7 @@ button.nav-item:not(:disabled) {
 }
 
 .ext-version-label {
-    font-size: 10px;
+    font-size: 0.769em;
     text-transform: uppercase;
     letter-spacing: 0.12em;
     font-weight: 700;
@@ -626,7 +633,7 @@ button.nav-item:not(:disabled) {
     flex-wrap: wrap;
     align-items: center;
     gap: 8px 12px;
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
     font-variant-numeric: tabular-nums;
 }
@@ -642,7 +649,7 @@ button.nav-item:not(:disabled) {
     gap: 6px;
     color: var(--accent);
     font-weight: 700;
-    font-size: 12px;
+    font-size: var(--font-sm);
 }
 
 .ext-version-target-arrow {
@@ -650,13 +657,13 @@ button.nav-item:not(:disabled) {
 }
 
 .ext-version-single {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: rgba(229, 226, 225, 0.55);
     font-variant-numeric: tabular-nums;
 }
 
 .ext-version-text {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
 }
@@ -673,7 +680,7 @@ button.nav-item:not(:disabled) {
 .status-badge {
     display: inline-flex;
     align-items: center;
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 999px;
@@ -704,7 +711,7 @@ button.nav-item:not(:disabled) {
     border-radius: var(--radius-sm);
     background: var(--bg-app);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     cursor: pointer;
 }
 
@@ -771,7 +778,7 @@ button.nav-item:not(:disabled) {
     max-height: 220px;
     overflow-y: auto;
     font-family: 'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.55;
     background: var(--bg-sidebar);
     color: var(--text-muted);
@@ -851,7 +858,7 @@ button.nav-item:not(:disabled) {
     padding: 4px 0;
     min-width: 160px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
-    font-size: 12px;
+    font-size: var(--font-sm);
 }
 
 .ctx-item {
@@ -948,7 +955,7 @@ button.nav-item:not(:disabled) {
 
 .operation-overlay-title {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--font-2xl);
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--text);
@@ -956,7 +963,7 @@ button.nav-item:not(:disabled) {
 
 .operation-overlay-hint {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.5;
     color: var(--text-muted);
 }
@@ -980,7 +987,7 @@ button.nav-item:not(:disabled) {
     padding: 4px 0;
     min-width: 140px;
     box-shadow: 0 4px 12px rgba(0,0,0,.5);
-    font-size: 12px;
+    font-size: var(--font-sm);
 }
 .ctx-item {
     padding: 6px 16px;
@@ -1012,7 +1019,7 @@ button.nav-item:not(:disabled) {
     align-items: center;
     gap: 7px;
     padding: 12px 16px 10px;
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -1046,13 +1053,13 @@ button.nav-item:not(:disabled) {
 }
 
 .settings-row-name {
-    font-size: 13px;
+    font-size: var(--font-md);
     font-weight: 500;
     color: var(--text);
 }
 
 .settings-row-desc {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
     line-height: 1.4;
 }
@@ -1070,7 +1077,7 @@ button.nav-item:not(:disabled) {
     border: none;
     background: transparent;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     font-family: inherit;
     cursor: pointer;
@@ -1097,14 +1104,14 @@ button.nav-item:not(:disabled) {
 }
 
 .font-hint-small {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
     user-select: none;
     line-height: 1;
 }
 
 .font-hint-large {
-    font-size: 17px;
+    font-size: var(--font-2xl);
     color: var(--text-muted);
     user-select: none;
     line-height: 1;

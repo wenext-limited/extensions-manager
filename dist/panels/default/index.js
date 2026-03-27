@@ -613,11 +613,9 @@ module.exports = Editor.Panel.define({
         },
         setFontSize(size) {
             const root = this.$.root;
-            console.log('[ext-manager] setFontSize called:', size, 'root:', root);
             if (!root)
                 return;
             root.style.setProperty('--base-font-size', size + 'px');
-            console.log('[ext-manager] font-size set to:', root.style.getPropertyValue('--base-font-size'));
             try {
                 localStorage.setItem(LS_FONT_SIZE, size);
             }
