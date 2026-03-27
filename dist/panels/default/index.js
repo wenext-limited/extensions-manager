@@ -20,6 +20,21 @@ function displayVersionLabel(v) {
         return '';
     return t.startsWith('v') ? t : `v${t}`;
 }
+/** 「扩展」Tab：已是最新 → 可更新 → 本地未装可安装 → 不在远程清单（本地多余） */
+function extensionTabStatusRank(status) {
+    switch (status) {
+        case 'synced':
+            return 0;
+        case 'need_update':
+            return 1;
+        case 'not_installed':
+            return 2;
+        case 'not_in_manifest':
+            return 3;
+        default:
+            return 99;
+    }
+}
 /** 图标方格内展示：取扩展名的首字母（ASCII 大写；中文取首字） */
 function extensionNameInitial(name) {
     const t = name.trim();
@@ -505,8 +520,18 @@ module.exports = Editor.Panel.define({
                 listEl.innerHTML = `<div class="loading">${emptyByNav[nav]}</div>`;
                 return;
             }
+            let rows = filtered;
+            if (nav === 'extensions') {
+                rows = [...filtered].sort((a, b) => {
+                    const ra = extensionTabStatusRank(a.status);
+                    const rb = extensionTabStatusRank(b.status);
+                    if (ra !== rb)
+                        return ra - rb;
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                });
+            }
             const fragment = document.createDocumentFragment();
-            for (const ext of filtered) {
+            for (const ext of rows) {
                 fragment.appendChild(this.createExtItem(ext));
             }
             listEl.innerHTML = '';
