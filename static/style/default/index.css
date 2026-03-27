@@ -639,7 +639,8 @@ button.nav-item:not(:disabled) {
 }
 
 .ext-version-current {
-    color: rgba(229, 226, 225, 0.55);
+    color: var(--text-muted);
+    opacity: 0.7;
 }
 
 /* 与「当前:」并列一行：箭头号、标签与版本号同色蓝 */
@@ -658,7 +659,8 @@ button.nav-item:not(:disabled) {
 
 .ext-version-single {
     font-size: var(--font-sm);
-    color: rgba(229, 226, 225, 0.55);
+    color: var(--text-muted);
+    opacity: 0.7;
     font-variant-numeric: tabular-nums;
 }
 
