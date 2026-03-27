@@ -271,7 +271,7 @@ module.exports = Editor.Panel.define({
             if (bar)
                 bar.hidden = true;
         },
-        /** 结束一次注册表拉取的 UI：后台模式关顶栏；手动「拉取最新配置」关全屏模态与取消按钮 */
+        /** 结束一次注册表拉取的 UI：后台模式关顶栏；手动「同步最新配置」关全屏模态与取消按钮 */
         _cleanupRegistryPullUi(modalForThisRun) {
             if (modalForThisRun) {
                 const cancelBtn = this.$.operationOverlayCancel;
@@ -290,7 +290,7 @@ module.exports = Editor.Panel.define({
             }
         },
         /**
-         * 从远程拉取 registry.json：后台打开时仅用顶栏进度条；手动「拉取最新配置」时使用全屏模态 + 取消拉取。
+         * 从远程拉取 registry.json：后台打开时仅用顶栏进度条；手动「同步最新配置」时使用全屏模态 + 取消同步。
          */
         runRegistryRefreshWithProgress(opts) {
             const modalForThisRun = (opts === null || opts === void 0 ? void 0 : opts.modal) === true;
@@ -300,7 +300,7 @@ module.exports = Editor.Panel.define({
                 this._registryPullModalActive = true;
                 this.setButtonsEnabled(false);
                 this.beginBlockingOperation({
-                    title: '正在拉取最新配置',
+                    title: '正在同步最新配置',
                     hint: '正在从远程更新扩展注册表（registry.json），请稍候…',
                 });
                 const cancelBtn = this.$.operationOverlayCancel;
@@ -945,7 +945,7 @@ module.exports = Editor.Panel.define({
             this.onRegistrySyncCancel();
         });
         this.$.btnRefresh.addEventListener('click', () => {
-            this.log('正在拉取最新配置（远程 registry）…');
+            this.log('正在同步最新配置（远程 registry）…');
             this.runRegistryRefreshWithProgress({ reloadSelf: true, modal: true });
         });
         this.$.btnClearLog.addEventListener('click', () => {
@@ -973,7 +973,7 @@ module.exports = Editor.Panel.define({
             this.toggleLogSection();
         });
         (_d = this.$.navHelp) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => {
-            this.log('帮助：侧栏「扩展」列出注册表与本地目录中的全部相关插件（已安装 / 未安装 / 可更新）；「更新」仅列出本地可 semver 升级的项；「库」列出注册表有但本机尚未安装目录的项。右键已装条目可打开目录。「拉取最新配置」从远程更新 registry.json 并刷新列表。');
+            this.log('帮助：侧栏「扩展」列出注册表与本地目录中的全部相关插件（已安装 / 未安装 / 可更新）；「更新」仅列出本地可 semver 升级的项；「库」列出注册表有但本机尚未安装目录的项。右键已装条目可打开目录。「同步最新配置」从远程更新 registry.json 并刷新列表。');
         });
         // ── 右键菜单初始化 ──
         const ctxMenu = this.$.ctxMenu;
