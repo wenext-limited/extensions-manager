@@ -312,54 +312,31 @@ function execAsync(cmd, options = {}) {
         }
     });
 }
-function getExtensionList(all) {
+/** 仅列出远程注册表与本地 extensions 目录均已存在的扩展（交集） */
+function getExtensionList() {
     const registry = readJSON(getRegistryPath()) || {};
+    const installedSet = new Set(getInstalledExtensionFolderNames());
     const result = [];
-    if (all) {
-        for (const name of Object.keys(registry)) {
-            const ext = registry[name];
-            const installedVersion = getInstalledVersion(name);
-            let status;
-            if (!installedVersion) {
-                status = 'not_installed';
-            }
-            else {
-                status = 'synced';
-            }
-            result.push({
-                name,
-                description: ext.description || '',
-                git: ext.git || '',
-                requiredVersion: null,
-                installedVersion,
-                status,
-            });
+    for (const name of Object.keys(registry)) {
+        if (!installedSet.has(name))
+            continue;
+        const ext = registry[name];
+        const installedVersion = getInstalledVersion(name);
+        let status;
+        if (!installedVersion) {
+            status = 'not_installed';
         }
-    }
-    else {
-        for (const name of getInstalledExtensionFolderNames()) {
-            const ext = registry[name];
-            const inRegistry = !!ext;
-            const installedVersion = getInstalledVersion(name);
-            let status;
-            if (!installedVersion) {
-                status = 'not_installed';
-            }
-            else if (!inRegistry) {
-                status = 'not_in_manifest';
-            }
-            else {
-                status = 'synced';
-            }
-            result.push({
-                name,
-                description: (ext === null || ext === void 0 ? void 0 : ext.description) || '',
-                git: (ext === null || ext === void 0 ? void 0 : ext.git) || '',
-                requiredVersion: null,
-                installedVersion,
-                status,
-            });
+        else {
+            status = 'synced';
         }
+        result.push({
+            name,
+            description: ext.description || '',
+            git: ext.git || '',
+            requiredVersion: null,
+            installedVersion,
+            status,
+        });
     }
     return result;
 }
@@ -416,8 +393,8 @@ async function attachRemoteUpgradeHint(info) {
         return Object.assign(Object.assign({}, info), { remoteLatestVersion: (_a = info.remoteLatestVersion) !== null && _a !== void 0 ? _a : null });
     }
 }
-async function getExtensionListAsync(all) {
-    const base = getExtensionList(all);
+async function getExtensionListAsync() {
+    const base = getExtensionList();
     return Promise.all(base.map((item) => attachRemoteUpgradeHint(item)));
 }
 // ─── 异步命令执行 ────────────────────────────────────────
@@ -740,10 +717,10 @@ exports.methods = {
         Editor.Panel.open(package_json_1.default.name);
     },
     async listAll() {
-        return getExtensionListAsync(true);
+        return getExtensionListAsync();
     },
     async listProject() {
-        return getExtensionListAsync(false);
+        return getExtensionListAsync();
     },
     async installExtension(nameWithVersion) {
         console.log(`[extensions-manager] install ${nameWithVersion}`);

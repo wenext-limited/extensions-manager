@@ -59,7 +59,6 @@ module.exports = Editor.Panel.define({
     style: readFileSync(join(__dirname, '../../../static/style/default/index.css'), 'utf-8'),
     $: {
         extList: '#ext-list',
-        showAll: '#show-all',
         searchPlugins: '#search-plugins',
         btnSync: '#btn-sync',
         btnRefresh: '#btn-refresh',
@@ -443,7 +442,6 @@ module.exports = Editor.Panel.define({
 
         /** 实际刷新逻辑：无闪烁 DOM 更新 */
         async _doRefreshList() {
-            const showAll = (this.$.showAll as HTMLInputElement).checked;
             const listEl = this.$.extList as HTMLElement;
 
             // 首次加载时才显示 "加载中..."
@@ -455,8 +453,7 @@ module.exports = Editor.Panel.define({
             }
 
             try {
-                const msgName = showAll ? 'list-all' : 'list-project';
-                const extensions: ExtensionInfo[] = await Editor.Message.request('extensions-manager', msgName);
+                const extensions: ExtensionInfo[] = await Editor.Message.request('extensions-manager', 'list-all');
                 const selfName = pkgJson.name as string;
                 const listExtensions = (extensions || []).filter((e) => e.name !== selfName);
 
@@ -844,7 +841,6 @@ module.exports = Editor.Panel.define({
             btns.forEach((btn: HTMLButtonElement) => btn.disabled = !enabled);
             (this.$.btnSync as HTMLButtonElement).disabled = !enabled;
             (this.$.btnRefresh as HTMLButtonElement).disabled = !enabled;
-            (this.$.showAll as HTMLInputElement).disabled = !enabled;
         },
     },
 
@@ -857,10 +853,6 @@ module.exports = Editor.Panel.define({
         (this as any)._blockingOpCount = 0;
         (this as any)._operationTimeoutId = null as ReturnType<typeof setTimeout> | null;
         (this as any)._registrySyncGen = 0;
-
-        (this.$.showAll as HTMLInputElement).addEventListener('change', () => {
-            this.refreshList();
-        });
 
         (this.$.registrySyncCancel as HTMLButtonElement | null)?.addEventListener('click', () => {
             this.onRegistrySyncCancel();
@@ -902,7 +894,7 @@ module.exports = Editor.Panel.define({
             this.toggleLogSection();
         });
         (this.$.navHelp as HTMLButtonElement | null)?.addEventListener('click', () => {
-            this.log('帮助：勾选「显示全部」可浏览注册表内全部扩展；取消勾选则仅显示 extensions 目录下已安装的扩展；右键条目可打开插件目录；「同步全部」按各扩展 package.json 的 version 重新拉取对应版本。');
+            this.log('帮助：列表仅包含远程注册表与本地 extensions 目录中均存在的扩展；右键条目可打开插件目录；「同步全部」按各扩展 package.json 的 version 重新拉取对应版本。');
         });
 
         // ── 右键菜单初始化 ──

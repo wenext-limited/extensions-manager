@@ -309,51 +309,30 @@ interface ExtensionInfo {
     status: 'synced' | 'need_update' | 'not_installed' | 'not_in_manifest';
 }
 
-function getExtensionList(all: boolean): ExtensionInfo[] {
+/** 仅列出远程注册表与本地 extensions 目录均已存在的扩展（交集） */
+function getExtensionList(): ExtensionInfo[] {
     const registry = readJSON(getRegistryPath()) || {};
+    const installedSet = new Set(getInstalledExtensionFolderNames());
     const result: ExtensionInfo[] = [];
 
-    if (all) {
-        for (const name of Object.keys(registry)) {
-            const ext = registry[name];
-            const installedVersion = getInstalledVersion(name);
-            let status: ExtensionInfo['status'];
-            if (!installedVersion) {
-                status = 'not_installed';
-            } else {
-                status = 'synced';
-            }
-            result.push({
-                name,
-                description: ext.description || '',
-                git: ext.git || '',
-                requiredVersion: null,
-                installedVersion,
-                status,
-            });
+    for (const name of Object.keys(registry)) {
+        if (!installedSet.has(name)) continue;
+        const ext = registry[name];
+        const installedVersion = getInstalledVersion(name);
+        let status: ExtensionInfo['status'];
+        if (!installedVersion) {
+            status = 'not_installed';
+        } else {
+            status = 'synced';
         }
-    } else {
-        for (const name of getInstalledExtensionFolderNames()) {
-            const ext = registry[name];
-            const inRegistry = !!ext;
-            const installedVersion = getInstalledVersion(name);
-            let status: ExtensionInfo['status'];
-            if (!installedVersion) {
-                status = 'not_installed';
-            } else if (!inRegistry) {
-                status = 'not_in_manifest';
-            } else {
-                status = 'synced';
-            }
-            result.push({
-                name,
-                description: ext?.description || '',
-                git: ext?.git || '',
-                requiredVersion: null,
-                installedVersion,
-                status,
-            });
-        }
+        result.push({
+            name,
+            description: ext.description || '',
+            git: ext.git || '',
+            requiredVersion: null,
+            installedVersion,
+            status,
+        });
     }
 
     return result;
@@ -408,8 +387,8 @@ async function attachRemoteUpgradeHint(info: ExtensionInfo): Promise<ExtensionIn
     }
 }
 
-async function getExtensionListAsync(all: boolean): Promise<ExtensionInfo[]> {
-    const base = getExtensionList(all);
+async function getExtensionListAsync(): Promise<ExtensionInfo[]> {
+    const base = getExtensionList();
     return Promise.all(base.map((item) => attachRemoteUpgradeHint(item)));
 }
 
@@ -753,11 +732,11 @@ export const methods: { [key: string]: (...args: any) => any } = {
     },
 
     async listAll(): Promise<ExtensionInfo[]> {
-        return getExtensionListAsync(true);
+        return getExtensionListAsync();
     },
 
     async listProject(): Promise<ExtensionInfo[]> {
-        return getExtensionListAsync(false);
+        return getExtensionListAsync();
     },
 
     async installExtension(nameWithVersion: string): Promise<{ success: boolean; output: string }> {

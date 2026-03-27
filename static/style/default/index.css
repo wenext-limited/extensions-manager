@@ -304,21 +304,6 @@
     }
 }
 
-.filter-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
-}
-
-.filter-toggle input {
-    accent-color: var(--accent);
-}
-
 /* ─── 按钮 ─── */
 .btn {
     padding: 8px 16px;
