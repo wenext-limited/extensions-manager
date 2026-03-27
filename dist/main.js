@@ -746,7 +746,6 @@ exports.methods = {
             }
         }
         else {
-            console.log('[extensions-manager] manager 脚本不存在，使用内置 git clone 安装');
             result = await fallbackInstall(nameWithVersion);
         }
         console.log(`[extensions-manager] install result:`, result.output);
@@ -781,7 +780,6 @@ exports.methods = {
             }
         }
         else {
-            console.log('[extensions-manager] manager 脚本不存在，使用内置卸载');
             result = await fallbackUninstall(name);
         }
         console.log(`[extensions-manager] uninstall result:`, result.output);
