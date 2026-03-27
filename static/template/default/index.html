@@ -25,7 +25,7 @@
                 <span class="nav-item-icon" aria-hidden="true">▤</span>
                 <span>库</span>
             </button>
-            <button type="button" class="nav-item nav-item--muted" data-nav="settings" disabled title="敬请期待">
+            <button type="button" class="nav-item" data-nav="settings" title="外观与偏好设置">
                 <span class="nav-item-icon" aria-hidden="true">⚙</span>
                 <span>设置</span>
             </button>
@@ -63,6 +63,38 @@
 
         <div id="ext-list" class="ext-list">
             <div class="loading">加载中...</div>
+        </div>
+
+        <div id="settings-pane" class="settings-pane" style="display:none;">
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" class="settings-section-icon">
+                        <path fill="currentColor" d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 16c-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7-3.14 7-7 7zm3.5-9.5c0 1.93-1.57 3.5-3.5 3.5S8.5 11.43 8.5 9.5 10.07 6 12 6s3.5 1.57 3.5 3.5z"/>
+                    </svg>
+                    外观
+                </div>
+                <div class="settings-row">
+                    <div class="settings-row-label">
+                        <span class="settings-row-name">主题模式</span>
+                        <small class="settings-row-desc">在亮色和暗色美学之间切换。</small>
+                    </div>
+                    <div class="settings-theme-toggle">
+                        <button type="button" class="theme-btn" id="btn-theme-dark">深色</button>
+                        <button type="button" class="theme-btn" id="btn-theme-light">浅色</button>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <div class="settings-row-label">
+                        <span class="settings-row-name">基础字体大小</span>
+                        <small class="settings-row-desc">调整 UI 文本缩放以获得更好的可读性。</small>
+                    </div>
+                    <div class="settings-font-row">
+                        <span class="font-hint-small">A</span>
+                        <input type="range" id="font-size-slider" min="11" max="16" step="1" value="13" aria-label="字体大小">
+                        <span class="font-hint-large">A</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div id="log-panel-wrap" class="log-panel-wrap" hidden>

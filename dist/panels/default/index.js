@@ -8,6 +8,8 @@ const pkgJson = require('../../../package.json');
 const OPERATION_OVERLAY_TIMEOUT_MS = 10 * 60 * 1000;
 /** 远程注册表进度条：超时后请求主进程终止 git，避免无限等待 */
 const REGISTRY_SYNC_UI_TIMEOUT_MS = 90 * 1000;
+const LS_THEME = 'extensions-manager.theme';
+const LS_FONT_SIZE = 'extensions-manager.fontSize';
 /** 可更新时的推荐目标：远程较新的 semver tag（由主进程写入 remoteLatestVersion） */
 function getUpgradeTarget(ext) {
     if (ext.status !== 'need_update')
@@ -51,6 +53,7 @@ function extensionNameInitial(name) {
 module.exports = Editor.Panel.define({
     listeners: {
         show() {
+            this.applySettings();
             if (this._isFirstLoad === false && this.log) {
                 this.log('面板已显示，正在同步远程注册表…');
                 void this.loadSelfInfo();
@@ -63,6 +66,7 @@ module.exports = Editor.Panel.define({
     template: (0, fs_1.readFileSync)((0, path_1.join)(__dirname, '../../../static/template/default/index.html'), 'utf-8'),
     style: (0, fs_1.readFileSync)((0, path_1.join)(__dirname, '../../../static/style/default/index.css'), 'utf-8'),
     $: {
+        root: '.ext-manager',
         extList: '#ext-list',
         sectionTitle: '#section-title',
         sidebarNav: '.sidebar-nav',
@@ -85,6 +89,11 @@ module.exports = Editor.Panel.define({
         registrySyncBar: '#registry-sync-bar',
         registrySyncText: '#registry-sync-text',
         registrySyncCancel: '#registry-sync-cancel',
+        settingsPane: '#settings-pane',
+        btnThemeDark: '#btn-theme-dark',
+        btnThemeLight: '#btn-theme-light',
+        fontSizeSlider: '#font-size-slider',
+        mainHeader: '.main-header',
     },
     methods: {
         /** 嵌套安全：多项异步重叠时仅在最后一项结束时隐藏遮挡 */
@@ -507,7 +516,7 @@ module.exports = Editor.Panel.define({
         },
         _getActiveNav() {
             const n = this._activeNav;
-            if (n === 'updates' || n === 'library' || n === 'extensions')
+            if (n === 'updates' || n === 'library' || n === 'extensions' || n === 'settings')
                 return n;
             return 'extensions';
         },
@@ -516,9 +525,10 @@ module.exports = Editor.Panel.define({
             if (!navRoot)
                 return;
             const active = this._getActiveNav();
+            const isSettings = active === 'settings';
             navRoot.querySelectorAll('[data-nav]').forEach((h) => {
                 const key = h.getAttribute('data-nav');
-                if (!key || key === 'settings')
+                if (!key)
                     return;
                 const isActive = key === active;
                 h.classList.toggle('nav-item--active', isActive);
@@ -527,15 +537,91 @@ module.exports = Editor.Panel.define({
                 else
                     h.removeAttribute('aria-current');
             });
+            const extListEl = this.$.extList;
+            const settingsPaneEl = this.$.settingsPane;
             const titleEl = this.$.sectionTitle;
-            if (titleEl) {
+            const headerEl = this.$.mainHeader;
+            if (extListEl)
+                extListEl.style.display = isSettings ? 'none' : '';
+            if (settingsPaneEl)
+                settingsPaneEl.style.display = isSettings ? 'block' : 'none';
+            if (titleEl)
+                titleEl.style.display = isSettings ? 'none' : '';
+            if (headerEl)
+                headerEl.style.display = isSettings ? 'none' : '';
+            if (!isSettings && titleEl) {
                 const labels = {
                     extensions: '扩展',
                     updates: '更新',
                     library: '库',
                 };
-                titleEl.textContent = labels[active];
+                titleEl.textContent = labels[active] || active;
             }
+        },
+        applySettings() {
+            const root = this.$.root;
+            if (!root)
+                return;
+            try {
+                const theme = localStorage.getItem(LS_THEME) || 'dark';
+                if (theme === 'light') {
+                    root.classList.add('light-mode');
+                }
+                else {
+                    root.classList.remove('light-mode');
+                }
+                root.style.setProperty('--base-font-size', (localStorage.getItem(LS_FONT_SIZE) || '13') + 'px');
+            }
+            catch ( /* ignore */_a) { /* ignore */ }
+            this._syncThemeButtons();
+            this._syncFontSlider();
+        },
+        _syncThemeButtons() {
+            var _a, _b;
+            let isDark = true;
+            try {
+                isDark = localStorage.getItem(LS_THEME) !== 'light';
+            }
+            catch (_c) { }
+            (_a = this.$.btnThemeDark) === null || _a === void 0 ? void 0 : _a.classList.toggle('theme-btn--active', isDark);
+            (_b = this.$.btnThemeLight) === null || _b === void 0 ? void 0 : _b.classList.toggle('theme-btn--active', !isDark);
+        },
+        _syncFontSlider() {
+            const slider = this.$.fontSizeSlider;
+            if (!slider)
+                return;
+            try {
+                slider.value = localStorage.getItem(LS_FONT_SIZE) || '13';
+            }
+            catch ( /* ignore */_a) { /* ignore */ }
+        },
+        setTheme(mode) {
+            const root = this.$.root;
+            console.log('[ext-manager] setTheme called:', mode, 'root:', root);
+            if (!root)
+                return;
+            if (mode === 'light') {
+                root.classList.add('light-mode');
+            }
+            else {
+                root.classList.remove('light-mode');
+            }
+            console.log('[ext-manager] classes after change:', root.classList.toString());
+            try {
+                localStorage.setItem(LS_THEME, mode);
+            }
+            catch ( /* ignore */_a) { /* ignore */ }
+            this._syncThemeButtons();
+        },
+        setFontSize(size) {
+            const root = this.$.root;
+            if (!root)
+                return;
+            root.style.setProperty('--base-font-size', size + 'px');
+            try {
+                localStorage.setItem(LS_FONT_SIZE, size);
+            }
+            catch ( /* ignore */_a) { /* ignore */ }
         },
         /** 使用最近一次 list-all 缓存按当前侧栏分类渲染（切换分类时不重复请求主进程） */
         renderListFromCache() {
@@ -554,6 +640,7 @@ module.exports = Editor.Panel.define({
                     extensions: '无扩展数据',
                     updates: '暂无可更新插件',
                     library: '暂无可安装插件（注册表中均已在本机目录存在）',
+                    settings: '',
                 };
                 listEl.innerHTML = `<div class="loading">${emptyByNav[nav]}</div>`;
                 return;
@@ -914,7 +1001,7 @@ module.exports = Editor.Panel.define({
         },
     },
     ready() {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e, _f, _g;
         // 初始化实例属性（定义在顶层的属性不会自动挂到 this 上）
         this._refreshTimer = null;
         this._searchTimer = null;
@@ -933,11 +1020,12 @@ module.exports = Editor.Panel.define({
                 if (!t || t.hasAttribute('disabled'))
                     return;
                 const key = t.getAttribute('data-nav');
-                if (key !== 'extensions' && key !== 'updates' && key !== 'library')
+                if (key !== 'extensions' && key !== 'updates' && key !== 'library' && key !== 'settings')
                     return;
                 this._activeNav = key;
                 this._updateSidebarNavActive();
-                this.renderListFromCache();
+                if (key !== 'settings')
+                    this.renderListFromCache();
             });
         }
         this._updateSidebarNavActive();
@@ -969,10 +1057,20 @@ module.exports = Editor.Panel.define({
         if (verEl)
             verEl.textContent = `v${pkgJson.version || '?'}`;
         this.applyLogSectionVisibility(this.isLogSectionVisible());
-        (_c = this.$.navScrollLogs) === null || _c === void 0 ? void 0 : _c.addEventListener('click', () => {
+        this.applySettings();
+        (_c = this.$.btnThemeDark) === null || _c === void 0 ? void 0 : _c.addEventListener('click', () => {
+            this.setTheme('dark');
+        });
+        (_d = this.$.btnThemeLight) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => {
+            this.setTheme('light');
+        });
+        (_e = this.$.fontSizeSlider) === null || _e === void 0 ? void 0 : _e.addEventListener('input', (e) => {
+            this.setFontSize(e.target.value);
+        });
+        (_f = this.$.navScrollLogs) === null || _f === void 0 ? void 0 : _f.addEventListener('click', () => {
             this.toggleLogSection();
         });
-        (_d = this.$.navHelp) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => {
+        (_g = this.$.navHelp) === null || _g === void 0 ? void 0 : _g.addEventListener('click', () => {
             this.log('帮助：侧栏「扩展」列出注册表与本地目录中的全部相关插件（已安装 / 未安装 / 可更新）；「更新」仅列出本地可 semver 升级的项；「库」列出注册表有但本机尚未安装目录的项。右键已装条目可打开目录。「同步最新配置」从远程更新 registry.json 并刷新列表。');
         });
         // ── 右键菜单初始化 ──

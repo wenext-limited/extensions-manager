@@ -22,7 +22,10 @@ interface ExtensionInfo {
     hasLocalPackage: boolean;
 }
 
-type SidebarNavKey = 'extensions' | 'updates' | 'library';
+type SidebarNavKey = 'extensions' | 'updates' | 'library' | 'settings';
+
+const LS_THEME = 'extensions-manager.theme';
+const LS_FONT_SIZE = 'extensions-manager.fontSize';
 
 /** 可更新时的推荐目标：远程较新的 semver tag（由主进程写入 remoteLatestVersion） */
 function getUpgradeTarget(ext: ExtensionInfo): string | null {
@@ -66,6 +69,7 @@ function extensionNameInitial(name: string): string {
 module.exports = Editor.Panel.define({
     listeners: {
         show() {
+            this.applySettings();
             if ((this as any)._isFirstLoad === false && this.log) {
                 this.log('面板已显示，正在同步远程注册表…');
                 void this.loadSelfInfo();
@@ -78,6 +82,7 @@ module.exports = Editor.Panel.define({
     template: readFileSync(join(__dirname, '../../../static/template/default/index.html'), 'utf-8'),
     style: readFileSync(join(__dirname, '../../../static/style/default/index.css'), 'utf-8'),
     $: {
+        root: '.ext-manager',
         extList: '#ext-list',
         sectionTitle: '#section-title',
         sidebarNav: '.sidebar-nav',
@@ -100,6 +105,11 @@ module.exports = Editor.Panel.define({
         registrySyncBar: '#registry-sync-bar',
         registrySyncText: '#registry-sync-text',
         registrySyncCancel: '#registry-sync-cancel',
+        settingsPane: '#settings-pane',
+        btnThemeDark: '#btn-theme-dark',
+        btnThemeLight: '#btn-theme-light',
+        fontSizeSlider: '#font-size-slider',
+        mainHeader: '.main-header',
     },
 
     methods: {
@@ -515,7 +525,7 @@ module.exports = Editor.Panel.define({
 
         _getActiveNav(): SidebarNavKey {
             const n = (this as any)._activeNav as SidebarNavKey | undefined;
-            if (n === 'updates' || n === 'library' || n === 'extensions') return n;
+            if (n === 'updates' || n === 'library' || n === 'extensions' || n === 'settings') return n;
             return 'extensions';
         },
 
@@ -523,23 +533,89 @@ module.exports = Editor.Panel.define({
             const navRoot = this.$.sidebarNav as HTMLElement | null;
             if (!navRoot) return;
             const active = this._getActiveNav();
+            const isSettings = active === 'settings';
+
             navRoot.querySelectorAll<HTMLElement>('[data-nav]').forEach((h) => {
                 const key = h.getAttribute('data-nav');
-                if (!key || key === 'settings') return;
+                if (!key) return;
                 const isActive = key === active;
                 h.classList.toggle('nav-item--active', isActive);
                 if (isActive) h.setAttribute('aria-current', 'page');
                 else h.removeAttribute('aria-current');
             });
+
+            const extListEl = this.$.extList as HTMLElement | null;
+            const settingsPaneEl = this.$.settingsPane as HTMLElement | null;
             const titleEl = this.$.sectionTitle as HTMLElement | null;
-            if (titleEl) {
-                const labels: Record<SidebarNavKey, string> = {
+            const headerEl = this.$.mainHeader as HTMLElement | null;
+
+            if (extListEl) extListEl.style.display = isSettings ? 'none' : '';
+            if (settingsPaneEl) settingsPaneEl.style.display = isSettings ? 'block' : 'none';
+            if (titleEl) titleEl.style.display = isSettings ? 'none' : '';
+            if (headerEl) headerEl.style.display = isSettings ? 'none' : '';
+
+            if (!isSettings && titleEl) {
+                const labels: Record<string, string> = {
                     extensions: '扩展',
                     updates: '更新',
                     library: '库',
                 };
-                titleEl.textContent = labels[active];
+                titleEl.textContent = labels[active] || active;
             }
+        },
+
+        applySettings() {
+            const root = this.$.root as HTMLElement | null;
+            if (!root) return;
+            try {
+                const theme = localStorage.getItem(LS_THEME) || 'dark';
+                if (theme === 'light') {
+                    root.classList.add('light-mode');
+                } else {
+                    root.classList.remove('light-mode');
+                }
+                root.style.setProperty('--base-font-size', (localStorage.getItem(LS_FONT_SIZE) || '13') + 'px');
+            } catch { /* ignore */ }
+            this._syncThemeButtons();
+            this._syncFontSlider();
+        },
+
+        _syncThemeButtons() {
+            let isDark = true;
+            try {
+                isDark = localStorage.getItem(LS_THEME) !== 'light';
+            } catch { }
+            (this.$.btnThemeDark as HTMLElement | null)?.classList.toggle('theme-btn--active', isDark);
+            (this.$.btnThemeLight as HTMLElement | null)?.classList.toggle('theme-btn--active', !isDark);
+        },
+
+        _syncFontSlider() {
+            const slider = this.$.fontSizeSlider as HTMLInputElement | null;
+            if (!slider) return;
+            try {
+                slider.value = localStorage.getItem(LS_FONT_SIZE) || '13';
+            } catch { /* ignore */ }
+        },
+
+        setTheme(mode: 'dark' | 'light') {
+            const root = this.$.root as HTMLElement | null;
+            console.log('[ext-manager] setTheme called:', mode, 'root:', root);
+            if (!root) return;
+            if (mode === 'light') {
+                root.classList.add('light-mode');
+            } else {
+                root.classList.remove('light-mode');
+            }
+            console.log('[ext-manager] classes after change:', root.classList.toString());
+            try { localStorage.setItem(LS_THEME, mode); } catch { /* ignore */ }
+            this._syncThemeButtons();
+        },
+
+        setFontSize(size: string) {
+            const root = this.$.root as HTMLElement | null;
+            if (!root) return;
+            root.style.setProperty('--base-font-size', size + 'px');
+            try { localStorage.setItem(LS_FONT_SIZE, size); } catch { /* ignore */ }
         },
 
         /** 使用最近一次 list-all 缓存按当前侧栏分类渲染（切换分类时不重复请求主进程） */
@@ -561,6 +637,7 @@ module.exports = Editor.Panel.define({
                     extensions: '无扩展数据',
                     updates: '暂无可更新插件',
                     library: '暂无可安装插件（注册表中均已在本机目录存在）',
+                    settings: '',
                 };
                 listEl.innerHTML = `<div class="loading">${emptyByNav[nav]}</div>`;
                 return;
@@ -974,11 +1051,11 @@ module.exports = Editor.Panel.define({
             navRoot.addEventListener('click', (e: MouseEvent) => {
                 const t = (e.target as HTMLElement).closest('[data-nav]') as HTMLElement | null;
                 if (!t || t.hasAttribute('disabled')) return;
-                const key = t.getAttribute('data-nav') as SidebarNavKey | 'settings' | null;
-                if (key !== 'extensions' && key !== 'updates' && key !== 'library') return;
+                const key = t.getAttribute('data-nav') as SidebarNavKey | null;
+                if (key !== 'extensions' && key !== 'updates' && key !== 'library' && key !== 'settings') return;
                 (this as any)._activeNav = key;
                 this._updateSidebarNavActive();
-                this.renderListFromCache();
+                if (key !== 'settings') this.renderListFromCache();
             });
         }
         this._updateSidebarNavActive();
@@ -1014,6 +1091,18 @@ module.exports = Editor.Panel.define({
         if (verEl) verEl.textContent = `v${pkgJson.version || '?'}`;
 
         this.applyLogSectionVisibility(this.isLogSectionVisible());
+
+        this.applySettings();
+
+        (this.$.btnThemeDark as HTMLButtonElement | null)?.addEventListener('click', () => {
+            this.setTheme('dark');
+        });
+        (this.$.btnThemeLight as HTMLButtonElement | null)?.addEventListener('click', () => {
+            this.setTheme('light');
+        });
+        (this.$.fontSizeSlider as HTMLInputElement | null)?.addEventListener('input', (e: Event) => {
+            this.setFontSize((e.target as HTMLInputElement).value);
+        });
 
         (this.$.navScrollLogs as HTMLButtonElement | null)?.addEventListener('click', () => {
             this.toggleLogSection();
