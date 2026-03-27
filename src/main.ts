@@ -673,27 +673,6 @@ async function fallbackUninstall(name: string): Promise<{ success: boolean; outp
     }
 }
 
-async function fallbackSync(): Promise<{ success: boolean; output: string }> {
-    const registry = readJSON(getRegistryPath()) || {};
-    const names = getInstalledExtensionFolderNames().filter((n) => registry[n]);
-    if (names.length === 0) {
-        return { success: true, output: '无需同步（无已安装且在注册表内的扩展）' };
-    }
-
-    const results: string[] = [];
-    let allOk = true;
-
-    for (const name of names) {
-        const version = getInstalledVersion(name);
-        const target = version ? `${name}@${version}` : name;
-        const r = await fallbackInstall(target);
-        results.push(`${r.success ? '✓' : '✗'} ${target}: ${r.output}`);
-        if (!r.success) allOk = false;
-    }
-
-    return { success: allOk, output: results.join('\n') };
-}
-
 /** 判断是否有外部 manager 脚本可用 */
 function hasManagerScript(): boolean {
     return fs.existsSync(getManagerScript());
@@ -825,24 +804,6 @@ export const methods: { [key: string]: (...args: any) => any } = {
             result = await fallbackUninstall(name);
         }
         console.log(`[extensions-manager] uninstall result:`, result.output);
-        return result;
-    },
-
-    async syncAll(force: boolean = false): Promise<{ success: boolean; output: string }> {
-        const args = force ? 'sync --force' : 'sync';
-        console.log(`[extensions-manager] ${args}`);
-        let result: { success: boolean; output: string };
-        if (hasManagerScript()) {
-            result = await runManagerCommand(args);
-            if (!result.success) {
-                console.log('[extensions-manager] 外部脚本失败，降级到内置同步');
-                result = await fallbackSync();
-            }
-        } else {
-            console.log('[extensions-manager] manager 脚本不存在，使用内置同步');
-            result = await fallbackSync();
-        }
-        console.log(`[extensions-manager] sync result:`, result.output);
         return result;
     },
 

@@ -67,7 +67,6 @@ module.exports = Editor.Panel.define({
         sectionTitle: '#section-title',
         sidebarNav: '.sidebar-nav',
         searchPlugins: '#search-plugins',
-        btnSync: '#btn-sync',
         btnRefresh: '#btn-refresh',
         logOutput: '#log-output',
         logPanelWrap: '#log-panel-wrap',
@@ -82,6 +81,7 @@ module.exports = Editor.Panel.define({
         operationOverlay: '#operation-overlay',
         operationOverlayTitle: '#operation-overlay-title',
         operationOverlayHint: '#operation-overlay-hint',
+        operationOverlayCancel: '#operation-overlay-cancel',
         registrySyncBar: '#registry-sync-bar',
         registrySyncText: '#registry-sync-text',
         registrySyncCancel: '#registry-sync-cancel',
@@ -271,13 +271,50 @@ module.exports = Editor.Panel.define({
             if (bar)
                 bar.hidden = true;
         },
+        /** 结束一次注册表拉取的 UI：后台模式关顶栏；手动「拉取最新配置」关全屏模态与取消按钮 */
+        _cleanupRegistryPullUi(modalForThisRun) {
+            if (modalForThisRun) {
+                const cancelBtn = this.$.operationOverlayCancel;
+                if (cancelBtn) {
+                    cancelBtn.hidden = true;
+                    cancelBtn.onclick = null;
+                }
+                if (this._registryPullModalActive) {
+                    this._registryPullModalActive = false;
+                    this.endBlockingOperation();
+                    this.setButtonsEnabled(true);
+                }
+            }
+            else {
+                this._hideRegistrySyncBar();
+            }
+        },
         /**
-         * 顶部进度条 + 可取消 + 界面 90s 超时（会 kill git）；正常结束后再刷新列表。
+         * 从远程拉取 registry.json：后台打开时仅用顶栏进度条；手动「拉取最新配置」时使用全屏模态 + 取消拉取。
          */
         runRegistryRefreshWithProgress(opts) {
+            const modalForThisRun = (opts === null || opts === void 0 ? void 0 : opts.modal) === true;
             this._registrySyncGen = (this._registrySyncGen || 0) + 1;
             const gen = this._registrySyncGen;
-            this._showRegistrySyncBar();
+            if (modalForThisRun) {
+                this._registryPullModalActive = true;
+                this.setButtonsEnabled(false);
+                this.beginBlockingOperation({
+                    title: '正在拉取最新配置',
+                    hint: '正在从远程更新扩展注册表（registry.json），请稍候…',
+                });
+                const cancelBtn = this.$.operationOverlayCancel;
+                if (cancelBtn) {
+                    cancelBtn.hidden = false;
+                    cancelBtn.onclick = () => {
+                        this.onRegistrySyncCancel();
+                    };
+                }
+            }
+            else {
+                this._registryPullModalActive = false;
+                this._showRegistrySyncBar();
+            }
             const timeoutId = setTimeout(() => {
                 if (this._registrySyncGen !== gen)
                     return;
@@ -285,14 +322,14 @@ module.exports = Editor.Panel.define({
                 void Editor.Message.request('extensions-manager', 'cancel-fetch-registry')
                     .then((r) => {
                     if (r === null || r === void 0 ? void 0 : r.success) {
-                        this.log('⚠ 远程注册表更新已超过等待时间，已中断拉取');
+                        this.log('⚠ 注册表拉取已超过等待时间，已中断');
                     }
                     else {
-                        this.log('⚠ 远程注册表更新等待超时，界面不再阻塞（若 clone 已结束可忽略）');
+                        this.log('⚠ 注册表拉取等待超时，界面不再阻塞（若 clone 已结束可忽略）');
                     }
                 })
-                    .catch(() => this.log('⚠ 远程注册表更新等待超时'));
-                this._hideRegistrySyncBar();
+                    .catch(() => this.log('⚠ 注册表拉取等待超时'));
+                this._cleanupRegistryPullUi(modalForThisRun);
                 this.refreshList();
             }, REGISTRY_SYNC_UI_TIMEOUT_MS);
             void (async () => {
@@ -301,8 +338,8 @@ module.exports = Editor.Panel.define({
                 }
                 finally {
                     clearTimeout(timeoutId);
+                    this._cleanupRegistryPullUi(modalForThisRun);
                     if (this._registrySyncGen === gen) {
-                        this._hideRegistrySyncBar();
                         this.refreshList();
                         if (opts === null || opts === void 0 ? void 0 : opts.reloadSelf)
                             void this.loadSelfInfo();
@@ -315,12 +352,13 @@ module.exports = Editor.Panel.define({
             void Editor.Message.request('extensions-manager', 'cancel-fetch-registry')
                 .then((r) => {
                 if (r === null || r === void 0 ? void 0 : r.success)
-                    this.log('已取消远程注册表更新');
+                    this.log('已取消注册表拉取');
                 else
                     this.log('当前没有进行中的注册表拉取');
             })
-                .catch(() => this.log('取消注册表更新失败'));
-            this._hideRegistrySyncBar();
+                .catch(() => this.log('取消注册表拉取失败'));
+            const modalActive = this._registryPullModalActive === true;
+            this._cleanupRegistryPullUi(modalActive);
             this.refreshList();
         },
         log(message) {
@@ -843,31 +881,6 @@ module.exports = Editor.Panel.define({
                 this.refreshList();
             }
         },
-        async doSync() {
-            this.log('同步所有扩展 ...');
-            this.setButtonsEnabled(false);
-            this.beginBlockingOperation({
-                title: '正在同步...',
-                hint: '请稍候，正在按各扩展 package.json 的 version 重新拉取...',
-            });
-            try {
-                const result = await Editor.Message.request('extensions-manager', 'sync-all', false);
-                if (result.success) {
-                    this.log('✓ 同步完成');
-                }
-                else {
-                    this.log(`同步结果:\n${result.output}`);
-                }
-            }
-            catch (err) {
-                this.log(`✗ 同步异常: ${err.message || err}`);
-            }
-            finally {
-                this.setButtonsEnabled(true);
-                this.endBlockingOperation();
-                this.refreshList();
-            }
-        },
         /** 设置单个扩展条目的 loading 状态 */
         _setItemLoading(name, loading, btnText) {
             if (loading) {
@@ -896,8 +909,7 @@ module.exports = Editor.Panel.define({
         },
         setButtonsEnabled(enabled) {
             const btns = this.$.extList.querySelectorAll('button');
-            btns.forEach((btn) => btn.disabled = !enabled);
-            this.$.btnSync.disabled = !enabled;
+            btns.forEach((btn) => (btn.disabled = !enabled));
             this.$.btnRefresh.disabled = !enabled;
         },
     },
@@ -911,6 +923,7 @@ module.exports = Editor.Panel.define({
         this._blockingOpCount = 0;
         this._operationTimeoutId = null;
         this._registrySyncGen = 0;
+        this._registryPullModalActive = false;
         this._activeNav = 'extensions';
         this._cachedExtensionList = undefined;
         const navRoot = this.$.sidebarNav;
@@ -932,11 +945,8 @@ module.exports = Editor.Panel.define({
             this.onRegistrySyncCancel();
         });
         this.$.btnRefresh.addEventListener('click', () => {
-            this.log('正在从远程更新扩展注册表…');
-            this.runRegistryRefreshWithProgress({ reloadSelf: true });
-        });
-        this.$.btnSync.addEventListener('click', () => {
-            this.doSync();
+            this.log('正在拉取最新配置（远程 registry）…');
+            this.runRegistryRefreshWithProgress({ reloadSelf: true, modal: true });
         });
         this.$.btnClearLog.addEventListener('click', () => {
             const logEl = this.$.logOutput;
@@ -963,7 +973,7 @@ module.exports = Editor.Panel.define({
             this.toggleLogSection();
         });
         (_d = this.$.navHelp) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => {
-            this.log('帮助：侧栏「扩展」列出注册表与本地目录中的全部相关插件（已安装 / 未安装 / 可更新）；「更新」仅列出本地可 semver 升级的项；「库」列出注册表有但本机尚未安装目录的项。右键已装条目可打开目录；「同步全部」按各扩展 package.json 的 version 重新拉取。');
+            this.log('帮助：侧栏「扩展」列出注册表与本地目录中的全部相关插件（已安装 / 未安装 / 可更新）；「更新」仅列出本地可 semver 升级的项；「库」列出注册表有但本机尚未安装目录的项。右键已装条目可打开目录。「拉取最新配置」从远程更新 registry.json 并刷新列表。');
         });
         // ── 右键菜单初始化 ──
         const ctxMenu = this.$.ctxMenu;

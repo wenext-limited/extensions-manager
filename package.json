@@ -55,11 +55,6 @@
                     "uninstallExtension"
                 ]
             },
-            "sync-all": {
-                "methods": [
-                    "syncAll"
-                ]
-            },
             "fetch-tags": {
                 "methods": [
                     "fetchTags"

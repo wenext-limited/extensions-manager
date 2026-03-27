@@ -44,8 +44,7 @@
                 <input type="search" id="search-plugins" class="search-input" placeholder="查找插件..." autocomplete="off" spellcheck="false">
             </div>
             <div class="header-actions">
-                <button type="button" id="btn-sync" class="btn btn-toolbar" title="按各扩展 package.json 的 version 重新拉取">同步全部</button>
-                <button type="button" id="btn-refresh" class="btn btn-toolbar" title="刷新列表">刷新</button>
+                <button type="button" id="btn-refresh" class="btn btn-toolbar" title="从远程拉取最新 registry.json 并刷新列表">拉取最新配置</button>
             </div>
         </header>
 
@@ -93,6 +92,9 @@
             <div class="operation-overlay-text">
                 <h2 id="operation-overlay-title" class="operation-overlay-title">正在处理...</h2>
                 <p id="operation-overlay-hint" class="operation-overlay-hint">请稍候，操作正在进行中...</p>
+            </div>
+            <div class="operation-overlay-footer">
+                <button type="button" id="operation-overlay-cancel" class="btn btn-toolbar operation-overlay-cancel" hidden>取消拉取</button>
             </div>
         </div>
     </div>

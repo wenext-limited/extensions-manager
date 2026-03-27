@@ -661,24 +661,6 @@ async function fallbackUninstall(name) {
         return { success: false, output: `卸载失败: ${err.message || String(err)}` };
     }
 }
-async function fallbackSync() {
-    const registry = readJSON(getRegistryPath()) || {};
-    const names = getInstalledExtensionFolderNames().filter((n) => registry[n]);
-    if (names.length === 0) {
-        return { success: true, output: '无需同步（无已安装且在注册表内的扩展）' };
-    }
-    const results = [];
-    let allOk = true;
-    for (const name of names) {
-        const version = getInstalledVersion(name);
-        const target = version ? `${name}@${version}` : name;
-        const r = await fallbackInstall(target);
-        results.push(`${r.success ? '✓' : '✗'} ${target}: ${r.output}`);
-        if (!r.success)
-            allOk = false;
-    }
-    return { success: allOk, output: results.join('\n') };
-}
 /** 判断是否有外部 manager 脚本可用 */
 function hasManagerScript() {
     return fs.existsSync(getManagerScript());
@@ -803,24 +785,6 @@ exports.methods = {
             result = await fallbackUninstall(name);
         }
         console.log(`[extensions-manager] uninstall result:`, result.output);
-        return result;
-    },
-    async syncAll(force = false) {
-        const args = force ? 'sync --force' : 'sync';
-        console.log(`[extensions-manager] ${args}`);
-        let result;
-        if (hasManagerScript()) {
-            result = await runManagerCommand(args);
-            if (!result.success) {
-                console.log('[extensions-manager] 外部脚本失败，降级到内置同步');
-                result = await fallbackSync();
-            }
-        }
-        else {
-            console.log('[extensions-manager] manager 脚本不存在，使用内置同步');
-            result = await fallbackSync();
-        }
-        console.log(`[extensions-manager] sync result:`, result.output);
         return result;
     },
     /** 获取指定扩展的远程 tag（仅 ls-remote --tags，无 clone；所有扩展含本仓库一致） */

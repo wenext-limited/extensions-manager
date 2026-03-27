@@ -941,6 +941,15 @@ button.nav-item:not(:disabled) {
     color: #c0c6d6;
 }
 
+.operation-overlay-footer {
+    margin-top: 20px;
+    padding-top: 4px;
+}
+
+.operation-overlay-cancel {
+    min-width: 7rem;
+}
+
 /* ─── 右键上下文菜单 ─── */
 .ctx-menu {
     position: fixed;
