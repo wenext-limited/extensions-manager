@@ -307,16 +307,23 @@ interface ExtensionInfo {
     /** 当远程存在比已安装更高的 semver tag 时填入 */
     remoteLatestVersion?: string | null;
     status: 'synced' | 'need_update' | 'not_installed' | 'not_in_manifest';
+    /** 本地 extensions 下是否存在有效 package.json 目录（与 getInstalledExtensionFolderNames 一致） */
+    hasLocalPackage: boolean;
 }
 
-/** 仅列出远程注册表与本地 extensions 目录均已存在的扩展（交集） */
+/**
+ * 完整列表：注册表内全部扩展 + 本地有但未在注册表中的目录（not_in_manifest）。
+ * 「库」视图用 hasLocalPackage === false 且 git 非空区分远程有而本地未装。
+ */
 function getExtensionList(): ExtensionInfo[] {
     const registry = readJSON(getRegistryPath()) || {};
-    const installedSet = new Set(getInstalledExtensionFolderNames());
+    const installedNames = getInstalledExtensionFolderNames();
+    const installedSet = new Set(installedNames);
     const result: ExtensionInfo[] = [];
+    const seen = new Set<string>();
 
     for (const name of Object.keys(registry)) {
-        if (!installedSet.has(name)) continue;
+        seen.add(name);
         const ext = registry[name];
         const installedVersion = getInstalledVersion(name);
         let status: ExtensionInfo['status'];
@@ -332,6 +339,27 @@ function getExtensionList(): ExtensionInfo[] {
             requiredVersion: null,
             installedVersion,
             status,
+            hasLocalPackage: installedSet.has(name),
+        });
+    }
+
+    for (const name of installedNames) {
+        if (seen.has(name)) continue;
+        const installedVersion = getInstalledVersion(name);
+        let status: ExtensionInfo['status'];
+        if (!installedVersion) {
+            status = 'not_installed';
+        } else {
+            status = 'not_in_manifest';
+        }
+        result.push({
+            name,
+            description: '',
+            git: '',
+            requiredVersion: null,
+            installedVersion,
+            status,
+            hasLocalPackage: true,
         });
     }
 
@@ -861,6 +889,7 @@ export const methods: { [key: string]: (...args: any) => any } = {
             requiredVersion: null,
             installedVersion,
             status: installedVersion ? 'synced' : 'not_installed',
+            hasLocalPackage: true,
         };
         return attachRemoteUpgradeHint(base);
     },

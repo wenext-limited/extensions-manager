@@ -18,7 +18,11 @@ interface ExtensionInfo {
     installedVersion: string | null;
     remoteLatestVersion?: string | null;
     status: 'synced' | 'need_update' | 'not_installed' | 'not_in_manifest';
+    /** 本地是否存在有效扩展目录（与主进程 getInstalledExtensionFolderNames 一致） */
+    hasLocalPackage: boolean;
 }
+
+type SidebarNavKey = 'extensions' | 'updates' | 'library';
 
 /** 可更新时的推荐目标：远程较新的 semver tag（由主进程写入 remoteLatestVersion） */
 function getUpgradeTarget(ext: ExtensionInfo): string | null {
@@ -59,6 +63,8 @@ module.exports = Editor.Panel.define({
     style: readFileSync(join(__dirname, '../../../static/style/default/index.css'), 'utf-8'),
     $: {
         extList: '#ext-list',
+        sectionTitle: '#section-title',
+        sidebarNav: '.sidebar-nav',
         searchPlugins: '#search-plugins',
         btnSync: '#btn-sync',
         btnRefresh: '#btn-refresh',
@@ -440,7 +446,82 @@ module.exports = Editor.Panel.define({
             }
         },
 
-        /** 实际刷新逻辑：无闪烁 DOM 更新 */
+        /** 左侧分类：扩展 = 全部；更新 = 可更新；库 = 远程有而本地未装 */
+        filterExtensionsForNav(items: ExtensionInfo[], nav: SidebarNavKey): ExtensionInfo[] {
+            switch (nav) {
+                case 'updates':
+                    return items.filter((e) => e.status === 'need_update');
+                case 'library':
+                    return items.filter((e) => !e.hasLocalPackage && !!(e.git && String(e.git).trim()));
+                case 'extensions':
+                default:
+                    return items;
+            }
+        },
+
+        _getActiveNav(): SidebarNavKey {
+            const n = (this as any)._activeNav as SidebarNavKey | undefined;
+            if (n === 'updates' || n === 'library' || n === 'extensions') return n;
+            return 'extensions';
+        },
+
+        _updateSidebarNavActive() {
+            const navRoot = this.$.sidebarNav as HTMLElement | null;
+            if (!navRoot) return;
+            const active = this._getActiveNav();
+            navRoot.querySelectorAll<HTMLElement>('[data-nav]').forEach((h) => {
+                const key = h.getAttribute('data-nav');
+                if (!key || key === 'settings') return;
+                const isActive = key === active;
+                h.classList.toggle('nav-item--active', isActive);
+                if (isActive) h.setAttribute('aria-current', 'page');
+                else h.removeAttribute('aria-current');
+            });
+            const titleEl = this.$.sectionTitle as HTMLElement | null;
+            if (titleEl) {
+                const labels: Record<SidebarNavKey, string> = {
+                    extensions: '扩展',
+                    updates: '更新',
+                    library: '库',
+                };
+                titleEl.textContent = labels[active];
+            }
+        },
+
+        /** 使用最近一次 list-all 缓存按当前侧栏分类渲染（切换分类时不重复请求主进程） */
+        renderListFromCache() {
+            const listEl = this.$.extList as HTMLElement;
+            const nav = this._getActiveNav();
+            const cached = (this as any)._cachedExtensionList as ExtensionInfo[] | undefined;
+
+            if (!cached) {
+                if (listEl.children.length === 0) {
+                    listEl.innerHTML = '<div class="loading">加载中...</div>';
+                }
+                return;
+            }
+
+            const filtered = this.filterExtensionsForNav(cached, nav);
+            if (!filtered.length) {
+                const emptyByNav: Record<SidebarNavKey, string> = {
+                    extensions: '无扩展数据',
+                    updates: '暂无可更新插件',
+                    library: '暂无可安装插件（注册表中均已在本机目录存在）',
+                };
+                listEl.innerHTML = `<div class="loading">${emptyByNav[nav]}</div>`;
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            for (const ext of filtered) {
+                fragment.appendChild(this.createExtItem(ext));
+            }
+            listEl.innerHTML = '';
+            listEl.appendChild(fragment);
+            this.applySearchFilter();
+        },
+
+        /** 实际刷新逻辑：拉取完整列表后写入缓存并渲染当前分类 */
         async _doRefreshList() {
             const listEl = this.$.extList as HTMLElement;
 
@@ -456,22 +537,14 @@ module.exports = Editor.Panel.define({
                 const extensions: ExtensionInfo[] = await Editor.Message.request('extensions-manager', 'list-all');
                 const selfName = pkgJson.name as string;
                 const listExtensions = (extensions || []).filter((e) => e.name !== selfName);
+                (this as any)._cachedExtensionList = listExtensions;
 
                 if (!listExtensions.length) {
                     listEl.innerHTML = '<div class="loading">无扩展数据</div>';
                     return;
                 }
 
-                // 用 DocumentFragment 构建新列表，然后一次性替换
-                const fragment = document.createDocumentFragment();
-                for (const ext of listExtensions) {
-                    fragment.appendChild(this.createExtItem(ext));
-                }
-
-                // 一次性替换所有子节点（无闪烁）
-                listEl.innerHTML = '';
-                listEl.appendChild(fragment);
-                this.applySearchFilter();
+                this.renderListFromCache();
             } catch (err: any) {
                 listEl.innerHTML = `<div class="loading">加载失败: ${err.message || err}</div>`;
             }
@@ -853,6 +926,22 @@ module.exports = Editor.Panel.define({
         (this as any)._blockingOpCount = 0;
         (this as any)._operationTimeoutId = null as ReturnType<typeof setTimeout> | null;
         (this as any)._registrySyncGen = 0;
+        (this as any)._activeNav = 'extensions' as SidebarNavKey;
+        (this as any)._cachedExtensionList = undefined as ExtensionInfo[] | undefined;
+
+        const navRoot = this.$.sidebarNav as HTMLElement | null;
+        if (navRoot) {
+            navRoot.addEventListener('click', (e: MouseEvent) => {
+                const t = (e.target as HTMLElement).closest('[data-nav]') as HTMLElement | null;
+                if (!t || t.hasAttribute('disabled')) return;
+                const key = t.getAttribute('data-nav') as SidebarNavKey | 'settings' | null;
+                if (key !== 'extensions' && key !== 'updates' && key !== 'library') return;
+                (this as any)._activeNav = key;
+                this._updateSidebarNavActive();
+                this.renderListFromCache();
+            });
+        }
+        this._updateSidebarNavActive();
 
         (this.$.registrySyncCancel as HTMLButtonElement | null)?.addEventListener('click', () => {
             this.onRegistrySyncCancel();
@@ -894,7 +983,9 @@ module.exports = Editor.Panel.define({
             this.toggleLogSection();
         });
         (this.$.navHelp as HTMLButtonElement | null)?.addEventListener('click', () => {
-            this.log('帮助：列表仅包含远程注册表与本地 extensions 目录中均存在的扩展；右键条目可打开插件目录；「同步全部」按各扩展 package.json 的 version 重新拉取对应版本。');
+            this.log(
+                '帮助：侧栏「扩展」列出注册表与本地目录中的全部相关插件（已安装 / 未安装 / 可更新）；「更新」仅列出本地可 semver 升级的项；「库」列出注册表有但本机尚未安装目录的项。右键已装条目可打开目录；「同步全部」按各扩展 package.json 的 version 重新拉取。',
+            );
         });
 
         // ── 右键菜单初始化 ──

@@ -115,8 +115,18 @@
     font-size: 13px;
     font-weight: 500;
     text-align: left;
+    font-family: inherit;
     cursor: default;
     transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+button.nav-item:not(:disabled):not(.nav-item--active):hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+button.nav-item:not(:disabled) {
+    cursor: pointer;
 }
 
 .nav-item--active {

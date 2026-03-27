@@ -13,15 +13,15 @@
             </div>
         </div>
         <nav class="sidebar-nav">
-            <div class="nav-item nav-item--active" data-nav="extensions" aria-current="page">
+            <button type="button" class="nav-item nav-item--active" data-nav="extensions" aria-current="page" title="全部插件（已安装、未安装、可更新）">
                 <span class="nav-item-icon" aria-hidden="true">◇</span>
                 <span>扩展</span>
-            </div>
-            <button type="button" class="nav-item nav-item--muted" data-nav="updates" disabled title="敬请期待">
+            </button>
+            <button type="button" class="nav-item" data-nav="updates" title="本地可更新的插件">
                 <span class="nav-item-icon" aria-hidden="true">↻</span>
                 <span>更新</span>
             </button>
-            <button type="button" class="nav-item nav-item--muted" data-nav="library" disabled title="敬请期待">
+            <button type="button" class="nav-item" data-nav="library" title="远程注册表中有、本地尚未安装的插件">
                 <span class="nav-item-icon" aria-hidden="true">▤</span>
                 <span>库</span>
             </button>
@@ -60,7 +60,7 @@
 
         <div id="self-info" class="core-version-row" style="display:none;" role="region" aria-label="核心系统版本"></div>
 
-        <h2 class="section-title">已安装插件</h2>
+        <h2 class="section-title" id="section-title">扩展</h2>
 
         <div id="ext-list" class="ext-list">
             <div class="loading">加载中...</div>
