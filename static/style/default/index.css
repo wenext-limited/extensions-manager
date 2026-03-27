@@ -21,15 +21,15 @@
 
 /* ─── 浅色主题覆盖（明亮浅色背景）─── */
 .ext-manager.light-mode {
-    --bg-app: #f5f5f5;
-    --bg-sidebar: #ffffff;
-    --bg-card: #ffffff;
-    --bg-elevated: #fafafa;
+    --bg-app: #e8e8e8;
+    --bg-sidebar: #d4d4d4;
+    --bg-card: #c8c8c8;
+    --bg-elevated: #b8b8b8;
     --accent: #2d6fd6;
     --accent-glow: rgba(45, 111, 214, 0.25);
     --text: #1a1a1e;
-    --text-muted: #666666;
-    --border-subtle: rgba(0, 0, 0, 0.1);
+    --text-muted: #555555;
+    --border-subtle: rgba(0, 0, 0, 0.15);
     --success: #28a865;
     --success-muted: rgba(40, 168, 101, 0.15);
     --warn: #c9982a;

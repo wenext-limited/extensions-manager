@@ -597,7 +597,6 @@ module.exports = Editor.Panel.define({
         },
         setTheme(mode) {
             const root = this.$.root;
-            console.log('[ext-manager] setTheme called:', mode, 'root:', root);
             if (!root)
                 return;
             if (mode === 'light') {
@@ -606,7 +605,6 @@ module.exports = Editor.Panel.define({
             else {
                 root.classList.remove('light-mode');
             }
-            console.log('[ext-manager] classes after change:', root.classList.toString());
             try {
                 localStorage.setItem(LS_THEME, mode);
             }
@@ -615,9 +613,11 @@ module.exports = Editor.Panel.define({
         },
         setFontSize(size) {
             const root = this.$.root;
+            console.log('[ext-manager] setFontSize called:', size, 'root:', root);
             if (!root)
                 return;
             root.style.setProperty('--base-font-size', size + 'px');
+            console.log('[ext-manager] font-size set to:', root.style.getPropertyValue('--base-font-size'));
             try {
                 localStorage.setItem(LS_FONT_SIZE, size);
             }
