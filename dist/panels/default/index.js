@@ -44,6 +44,7 @@ module.exports = Editor.Panel.define({
         logOutput: '#log-output',
         logPanelWrap: '#log-panel-wrap',
         btnClearLog: '#btn-clear-log',
+        btnCopyLog: '#btn-copy-log',
         ctxMenu: '#ctx-menu',
         ctxOpenDir: '#ctx-open-dir',
         selfInfo: '#self-info',
@@ -317,6 +318,42 @@ module.exports = Editor.Panel.define({
             el.appendChild(line);
             el.scrollTop = el.scrollHeight;
         },
+        async copyLogs() {
+            const el = this.$.logOutput;
+            if (!el)
+                return;
+            const text = el.innerText || '';
+            if (!text.trim()) {
+                this.log('⚠ 当前没有可复制的日志');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                this.log('✓ 日志已复制到剪贴板');
+            }
+            catch (_a) {
+                // 某些环境不支持 clipboard API，回退到 execCommand
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', 'true');
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try {
+                    ok = document.execCommand('copy');
+                }
+                catch (_b) {
+                    ok = false;
+                }
+                document.body.removeChild(ta);
+                if (ok)
+                    this.log('✓ 日志已复制到剪贴板');
+                else
+                    this.log('⚠ 复制失败，请手动选中日志复制');
+            }
+        },
         isLogSectionVisible() {
             try {
                 const v = localStorage.getItem('extensions-manager.logSectionVisible');
@@ -585,21 +622,30 @@ module.exports = Editor.Panel.define({
             return item;
         },
         /**
-         * 首次展开下拉时再请求远程引用，避免列表渲染时对每个扩展都打 ls-remote。
+         * 创建下拉后立即请求远程 tags；同时保留交互触发兜底，避免首轮请求失败后无法再次加载。
          * 完整仓库内容仅在用户点击「安装/更新」后的 installExtension 中 clone。
          */
         attachLazyVersionLoader(selectEl, name, currentVersion) {
             let loaded = false;
+            let loading = false;
             const load = () => {
-                if (loaded)
+                if (loaded || loading)
                     return;
-                loaded = true;
-                void this.loadVersionsForSelect(name, selectEl, currentVersion);
+                loading = true;
+                void this.loadVersionsForSelect(name, selectEl, currentVersion)
+                    .then((ok) => {
+                    loaded = ok;
+                })
+                    .finally(() => {
+                    loading = false;
+                });
             };
+            // 面板打开后立即拉取远程版本（来自 tags）
+            load();
             selectEl.addEventListener('focus', load);
             selectEl.addEventListener('mousedown', load);
         },
-        /** 异步拉远程分支引用填入下拉（无 clone；含本插件，与其他扩展一致） */
+        /** 异步拉远程 tag 引用填入下拉（无 clone；含本插件，与其他扩展一致） */
         async loadVersionsForSelect(name, selectEl, currentVersion) {
             try {
                 const remote = await Editor.Message.request('extensions-manager', 'fetch-tags', name);
@@ -617,7 +663,7 @@ module.exports = Editor.Panel.define({
                     }
                 }
                 if (ordered.length === 0)
-                    return;
+                    return false;
                 const prev = selectEl.value;
                 selectEl.innerHTML = '';
                 for (const tag of ordered) {
@@ -632,9 +678,11 @@ module.exports = Editor.Panel.define({
                 else if (cur && ordered.includes(cur)) {
                     selectEl.value = cur;
                 }
+                return true;
             }
             catch (err) {
                 console.warn(`[extensions-manager] 获取 ${name} 版本列表失败:`, err.message || err);
+                return false;
             }
         },
         async doInstall(name, version) {
@@ -748,7 +796,7 @@ module.exports = Editor.Panel.define({
         },
     },
     ready() {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         // 初始化实例属性（定义在顶层的属性不会自动挂到 this 上）
         this._refreshTimer = null;
         this._searchTimer = null;
@@ -775,6 +823,9 @@ module.exports = Editor.Panel.define({
             if (logEl)
                 logEl.innerHTML = '';
         });
+        (_b = this.$.btnCopyLog) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => {
+            void this.copyLogs();
+        });
         const searchEl = this.$.searchPlugins;
         if (searchEl) {
             const onSearch = () => this.applySearchFilter();
@@ -788,10 +839,10 @@ module.exports = Editor.Panel.define({
         if (verEl)
             verEl.textContent = `v${pkgJson.version || '?'}`;
         this.applyLogSectionVisibility(this.isLogSectionVisible());
-        (_b = this.$.navScrollLogs) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => {
+        (_c = this.$.navScrollLogs) === null || _c === void 0 ? void 0 : _c.addEventListener('click', () => {
             this.toggleLogSection();
         });
-        (_c = this.$.navHelp) === null || _c === void 0 ? void 0 : _c.addEventListener('click', () => {
+        (_d = this.$.navHelp) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => {
             this.log('帮助：勾选「显示全部」可浏览注册表内全部扩展；右键扩展条目可打开插件目录；「同步全部」按 extensions.json 对齐版本。');
         });
         // ── 右键菜单初始化 ──

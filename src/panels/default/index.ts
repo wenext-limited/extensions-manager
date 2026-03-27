@@ -52,6 +52,7 @@ module.exports = Editor.Panel.define({
         logOutput: '#log-output',
         logPanelWrap: '#log-panel-wrap',
         btnClearLog: '#btn-clear-log',
+        btnCopyLog: '#btn-copy-log',
         ctxMenu: '#ctx-menu',
         ctxOpenDir: '#ctx-open-dir',
         selfInfo: '#self-info',
@@ -322,6 +323,38 @@ module.exports = Editor.Panel.define({
             line.appendChild(body);
             el.appendChild(line);
             el.scrollTop = el.scrollHeight;
+        },
+
+        async copyLogs() {
+            const el = this.$.logOutput as HTMLElement | null;
+            if (!el) return;
+            const text = el.innerText || '';
+            if (!text.trim()) {
+                this.log('⚠ 当前没有可复制的日志');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                this.log('✓ 日志已复制到剪贴板');
+            } catch {
+                // 某些环境不支持 clipboard API，回退到 execCommand
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', 'true');
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try {
+                    ok = document.execCommand('copy');
+                } catch {
+                    ok = false;
+                }
+                document.body.removeChild(ta);
+                if (ok) this.log('✓ 日志已复制到剪贴板');
+                else this.log('⚠ 复制失败，请手动选中日志复制');
+            }
         },
 
         isLogSectionVisible(): boolean {
@@ -620,26 +653,35 @@ module.exports = Editor.Panel.define({
         },
 
         /**
-         * 首次展开下拉时再请求远程引用，避免列表渲染时对每个扩展都打 ls-remote。
+         * 创建下拉后立即请求远程 tags；同时保留交互触发兜底，避免首轮请求失败后无法再次加载。
          * 完整仓库内容仅在用户点击「安装/更新」后的 installExtension 中 clone。
          */
         attachLazyVersionLoader(selectEl: HTMLSelectElement, name: string, currentVersion: string | null) {
             let loaded = false;
+            let loading = false;
             const load = () => {
-                if (loaded) return;
-                loaded = true;
-                void this.loadVersionsForSelect(name, selectEl, currentVersion);
+                if (loaded || loading) return;
+                loading = true;
+                void this.loadVersionsForSelect(name, selectEl, currentVersion)
+                    .then((ok: boolean) => {
+                        loaded = ok;
+                    })
+                    .finally(() => {
+                        loading = false;
+                    });
             };
+            // 面板打开后立即拉取远程版本（来自 tags）
+            load();
             selectEl.addEventListener('focus', load);
             selectEl.addEventListener('mousedown', load);
         },
 
-        /** 异步拉远程分支引用填入下拉（无 clone；含本插件，与其他扩展一致） */
+        /** 异步拉远程 tag 引用填入下拉（无 clone；含本插件，与其他扩展一致） */
         async loadVersionsForSelect(
             name: string,
             selectEl: HTMLSelectElement,
             currentVersion: string | null,
-        ) {
+        ): Promise<boolean> {
             try {
                 const remote: string[] = await Editor.Message.request('extensions-manager', 'fetch-tags', name);
 
@@ -657,7 +699,7 @@ module.exports = Editor.Panel.define({
                     }
                 }
 
-                if (ordered.length === 0) return;
+                if (ordered.length === 0) return false;
 
                 const prev = selectEl.value;
                 selectEl.innerHTML = '';
@@ -673,8 +715,10 @@ module.exports = Editor.Panel.define({
                 } else if (cur && ordered.includes(cur)) {
                     selectEl.value = cur;
                 }
+                return true;
             } catch (err: any) {
                 console.warn(`[extensions-manager] 获取 ${name} 版本列表失败:`, err.message || err);
+                return false;
             }
         },
 
@@ -815,6 +859,10 @@ module.exports = Editor.Panel.define({
         (this.$.btnClearLog as HTMLButtonElement).addEventListener('click', () => {
             const logEl = this.$.logOutput as HTMLElement;
             if (logEl) logEl.innerHTML = '';
+        });
+
+        (this.$.btnCopyLog as HTMLButtonElement | null)?.addEventListener('click', () => {
+            void this.copyLogs();
         });
 
         const searchEl = this.$.searchPlugins as HTMLInputElement;

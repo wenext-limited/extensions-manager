@@ -383,58 +383,84 @@ function syncManifestFromTemplate() {
 }
 // ─── 远程版本引用（仅 ls-remote，无 clone）────────────────
 const REMOTE_REFS_CACHE_TTL = 5 * 60 * 1000;
-const headsCache = new Map();
-/** 仅获取远程分支名（git ls-remote --heads），一般比拉全量 tag 列表更快、更省 */
-async function fetchRemoteHeads(gitUrl) {
-    try {
-        const { stdout } = await execAsync(`git ls-remote --heads "${gitUrl}"`, {
-            timeout: 30000,
-        });
-        const heads = [];
-        for (const line of stdout.trim().split('\n')) {
-            if (!line)
-                continue;
-            const tab = line.indexOf('\t');
-            if (tab === -1)
-                continue;
-            const ref = line.slice(tab + 1).trim();
-            if (ref.startsWith('refs/heads/')) {
-                heads.push(ref.slice('refs/heads/'.length));
-            }
-        }
-        return heads;
-    }
-    catch (_a) {
-        return [];
-    }
-}
-function sortRemoteHeads(heads) {
-    const priority = ['main', 'master', 'develop', 'dev'];
+const tagsCache = new Map();
+/** 解析 ls-remote 输出中的 refs/tags/*（自动去除 annotated tag 的 ^{}） */
+function parseRemoteTagsFromLsRemote(stdout) {
+    const tags = [];
     const seen = new Set();
-    const out = [];
-    for (const p of priority) {
-        if (heads.includes(p)) {
-            out.push(p);
-            seen.add(p);
-        }
+    for (const rawLine of stdout.split('\n')) {
+        const line = rawLine.trim();
+        if (!line)
+            continue;
+        // 兼容 tab 或空格分隔：<sha>\t<ref> / <sha> <ref>
+        const parts = line.split(/\s+/);
+        const ref = parts[parts.length - 1] || '';
+        if (!ref.startsWith('refs/tags/'))
+            continue;
+        let tag = ref.slice('refs/tags/'.length).trim();
+        if (tag.endsWith('^{}'))
+            tag = tag.slice(0, -3);
+        if (!tag || seen.has(tag))
+            continue;
+        seen.add(tag);
+        tags.push(tag);
     }
-    for (const h of [...heads].sort((a, b) => a.localeCompare(b))) {
-        if (!seen.has(h)) {
-            out.push(h);
-            seen.add(h);
-        }
-    }
-    return out;
+    return tags;
 }
-/** 带缓存的远程分支列表（所有扩展版本下拉的远程选项，含本插件） */
-async function fetchHeadsCached(name, gitUrl) {
-    const cached = headsCache.get(name);
-    if (cached && Date.now() - cached.time < REMOTE_REFS_CACHE_TTL) {
-        return cached.heads;
+/** 获取远程 tag 列表（git ls-remote --tags），用于版本下拉 */
+async function fetchRemoteTags(gitUrl) {
+    const tries = [
+        `git ls-remote --tags --refs "${gitUrl}"`,
+        `git ls-remote "${gitUrl}" "refs/tags/*"`,
+    ];
+    for (const cmd of tries) {
+        try {
+            const { stdout } = await execAsync(cmd, { timeout: 90000 });
+            const tags = parseRemoteTagsFromLsRemote(stdout);
+            if (tags.length > 0)
+                return tags;
+        }
+        catch (err) {
+            console.warn(`[extensions-manager] 远程 tag 查询失败: ${cmd} -> ${(err === null || err === void 0 ? void 0 : err.message) || err}`);
+        }
     }
-    const heads = sortRemoteHeads(await fetchRemoteHeads(gitUrl));
-    headsCache.set(name, { heads, time: Date.now() });
-    return heads;
+    return [];
+}
+function parseSemverTuple(tag) {
+    const m = tag.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+    if (!m)
+        return null;
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+function sortRemoteTags(tags) {
+    return [...tags].sort((a, b) => {
+        const sa = parseSemverTuple(a);
+        const sb = parseSemverTuple(b);
+        if (sa && sb) {
+            if (sa[0] !== sb[0])
+                return sb[0] - sa[0];
+            if (sa[1] !== sb[1])
+                return sb[1] - sa[1];
+            if (sa[2] !== sb[2])
+                return sb[2] - sa[2];
+            return a.localeCompare(b);
+        }
+        if (sa && !sb)
+            return -1;
+        if (!sa && sb)
+            return 1;
+        return a.localeCompare(b);
+    });
+}
+/** 带缓存的远程 tag 列表（所有扩展版本下拉的远程选项，含本插件） */
+async function fetchTagsCached(name, gitUrl) {
+    const cached = tagsCache.get(name);
+    if (cached && Date.now() - cached.time < REMOTE_REFS_CACHE_TTL) {
+        return cached.tags;
+    }
+    const tags = sortRemoteTags(await fetchRemoteTags(gitUrl));
+    tagsCache.set(name, { tags, time: Date.now() });
+    return tags;
 }
 // ─── 自升级逻辑 ──────────────────────────────────────────
 /** 升级 extensions-manager 自身：将升级脚本写入临时目录并以独立进程执行 */
@@ -756,16 +782,16 @@ exports.methods = {
         console.log(`[extensions-manager] sync result:`, result.output);
         return result;
     },
-    /** 获取指定扩展的远程分支名（仅 ls-remote --heads，无 clone；所有扩展含本仓库一致） */
+    /** 获取指定扩展的远程 tag（仅 ls-remote --tags，无 clone；所有扩展含本仓库一致） */
     async fetchTags(name) {
         const registry = readJSON(getRegistryPath()) || {};
         const ext = registry[name];
         if (!ext || !ext.git)
             return [];
-        console.log(`[extensions-manager] 获取 ${name} 的远程分支列表...`);
-        const heads = await fetchHeadsCached(name, ext.git);
-        console.log(`[extensions-manager] ${name} 共 ${heads.length} 个分支`);
-        return heads;
+        console.log(`[extensions-manager] 获取 ${name} 的远程 tags 列表...`);
+        const tags = await fetchTagsCached(name, ext.git);
+        console.log(`[extensions-manager] ${name} 共 ${tags.length} 个 tags`);
+        return tags;
     },
     /** 手动刷新远程注册表 */
     async refreshRegistry() {
