@@ -8,24 +8,11 @@ const pkgJson = require('../../../package.json');
 const OPERATION_OVERLAY_TIMEOUT_MS = 10 * 60 * 1000;
 /** 远程注册表进度条：超时后请求主进程终止 git，避免无限等待 */
 const REGISTRY_SYNC_UI_TIMEOUT_MS = 90 * 1000;
-function versionNorm(v) {
-    const t = v.trim();
-    if (!t)
-        return '';
-    return t.startsWith('v') ? t.slice(1) : t;
-}
-/** 可更新时的推荐目标：优先 manifest 与本地不一致时的清单版本，否则用远程较新版本 */
+/** 可更新时的推荐目标：远程较新的 semver tag（由主进程写入 remoteLatestVersion） */
 function getUpgradeTarget(ext) {
-    var _a, _b;
     if (ext.status !== 'need_update')
         return null;
-    const req = ((_a = ext.requiredVersion) === null || _a === void 0 ? void 0 : _a.trim()) || '';
-    const ins = ((_b = ext.installedVersion) === null || _b === void 0 ? void 0 : _b.trim()) || '';
-    if (req && ins && versionNorm(req) !== versionNorm(ins))
-        return ext.requiredVersion || null;
-    if (ext.remoteLatestVersion)
-        return ext.remoteLatestVersion;
-    return ext.requiredVersion || null;
+    return ext.remoteLatestVersion || ext.requiredVersion || null;
 }
 function displayVersionLabel(v) {
     const t = v.trim();
@@ -173,18 +160,19 @@ module.exports = Editor.Panel.define({
                 label.className = 'core-version-label';
                 label.textContent = '核心系统版本:';
                 el.appendChild(label);
-                const localVer = info.installedVersion || pkgJson.version || '?';
+                const localVer = info.installedVersion || String(pkgJson.version || '?');
                 const pill = document.createElement('span');
                 pill.className = 'version-pill';
-                pill.textContent = `v${localVer}`;
+                pill.textContent = displayVersionLabel(localVer);
                 el.appendChild(pill);
                 if (info.status === 'need_update') {
                     el.classList.add('has-update');
                     const vSelect = document.createElement('select');
                     vSelect.className = 'version-select';
+                    const pref = getUpgradeTarget(info) || '';
                     const opt = document.createElement('option');
-                    opt.value = info.requiredVersion || '';
-                    opt.textContent = info.requiredVersion || '';
+                    opt.value = pref;
+                    opt.textContent = pref;
                     vSelect.appendChild(opt);
                     el.appendChild(vSelect);
                     const updateBtn = document.createElement('button');
@@ -192,8 +180,8 @@ module.exports = Editor.Panel.define({
                     updateBtn.textContent = '更新';
                     updateBtn.addEventListener('click', () => this.doInstall(info.name, vSelect.value.trim()));
                     el.appendChild(updateBtn);
-                    this.attachLazyVersionLoader(vSelect, info.name, info.requiredVersion);
-                    this.appendSystemStatus(el, false, true, '插件可更新', info.requiredVersion || undefined);
+                    this.attachLazyVersionLoader(vSelect, info.name, pref || info.installedVersion);
+                    this.appendSystemStatus(el, false, true, '插件可更新', pref || undefined);
                 }
                 else {
                     const badge = document.createElement('span');
@@ -215,7 +203,7 @@ module.exports = Editor.Panel.define({
                 el.appendChild(label);
                 const pill = document.createElement('span');
                 pill.className = 'version-pill';
-                pill.textContent = `v${pkgJson.version || '?'}`;
+                pill.textContent = displayVersionLabel(String(pkgJson.version || '?'));
                 el.appendChild(pill);
                 const hint = document.createElement('span');
                 hint.className = 'status-badge status-not-installed';
@@ -770,7 +758,7 @@ module.exports = Editor.Panel.define({
             this.setButtonsEnabled(false);
             this.beginBlockingOperation({
                 title: '正在同步...',
-                hint: '请稍候，正在按清单对齐扩展版本...',
+                hint: '请稍候，正在按各扩展 package.json 的 version 重新拉取...',
             });
             try {
                 const result = await Editor.Message.request('extensions-manager', 'sync-all', false);
@@ -872,7 +860,7 @@ module.exports = Editor.Panel.define({
             this.toggleLogSection();
         });
         (_d = this.$.navHelp) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => {
-            this.log('帮助：勾选「显示全部」可浏览注册表内全部扩展；右键扩展条目可打开插件目录；「同步全部」按 extensions.json 对齐版本。');
+            this.log('帮助：勾选「显示全部」可浏览注册表内全部扩展；取消勾选则仅显示 extensions 目录下已安装的扩展；右键条目可打开插件目录；「同步全部」按各扩展 package.json 的 version 重新拉取对应版本。');
         });
         // ── 右键菜单初始化 ──
         const ctxMenu = this.$.ctxMenu;

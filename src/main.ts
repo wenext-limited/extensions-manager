@@ -19,10 +19,6 @@ function getRegistryPath(): string {
     return path.join(getPluginDir(), 'registry.json');
 }
 
-function getManifestPath(): string {
-    return path.join(getProjectRoot(), 'extensions.json');
-}
-
 function getExtensionsDir(): string {
     return path.join(getProjectRoot(), 'extensions');
 }
@@ -42,12 +38,40 @@ function writeJSON(filePath: string, data: any): void {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 4) + '\n', 'utf-8');
 }
 
+/**
+ * 统一 package.json 的 version 字段：字符串原样（trim）；若为数字则视为 v+数字，便于与带 v 的 tag 对比、展示。
+ */
+function normalizePkgVersion(raw: unknown): string | null {
+    if (raw === undefined || raw === null) return null;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return `v${raw}`;
+    }
+    const s = String(raw).trim();
+    return s || null;
+}
+
+/** 插件名 = extensions 下文件夹名；仅统计含根目录 package.json 的目录 */
+function getInstalledExtensionFolderNames(): string[] {
+    const root = getExtensionsDir();
+    if (!fs.existsSync(root)) return [];
+    const out: string[] = [];
+    for (const ent of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!ent.isDirectory()) continue;
+        const name = ent.name;
+        if (name.startsWith('.') || name === 'node_modules') continue;
+        const pkgPath = path.join(root, name, 'package.json');
+        if (fs.existsSync(pkgPath)) out.push(name);
+    }
+    out.sort((a, b) => a.localeCompare(b));
+    return out;
+}
+
 function getInstalledVersion(name: string): string | null {
     const pkgPath = path.join(getExtensionsDir(), name, 'package.json');
     if (!fs.existsSync(pkgPath)) return null;
     try {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-        return pkg.version || null;
+        return normalizePkgVersion(pkg.version);
     } catch {
         return null;
     }
@@ -276,58 +300,59 @@ interface ExtensionInfo {
     name: string;
     description: string;
     git: string;
+    /** 保留字段：不再使用项目 extensions.json，恒为 null */
     requiredVersion: string | null;
+    /** 来自 extensions/<name>/package.json 的 version（已规范化） */
     installedVersion: string | null;
-    /** 当远程存在比已安装更高的 semver tag 时填入（与 manifest 是否一致无关） */
+    /** 当远程存在比已安装更高的 semver tag 时填入 */
     remoteLatestVersion?: string | null;
     status: 'synced' | 'need_update' | 'not_installed' | 'not_in_manifest';
 }
 
 function getExtensionList(all: boolean): ExtensionInfo[] {
-    // 每次读取列表前先从模板同步 manifest
-    syncManifestFromTemplate();
     const registry = readJSON(getRegistryPath()) || {};
-    const manifest = readJSON(getManifestPath()) || {};
     const result: ExtensionInfo[] = [];
 
     if (all) {
         for (const name of Object.keys(registry)) {
             const ext = registry[name];
-            const requiredVersion = manifest[name] || null;
             const installedVersion = getInstalledVersion(name);
-
-            let status: ExtensionInfo['status'];
-            if (requiredVersion && installedVersion) {
-                status = stripV(requiredVersion) === stripV(installedVersion) ? 'synced' : 'need_update';
-            } else if (requiredVersion && !installedVersion) {
-                status = 'not_installed';
-            } else if (!requiredVersion && installedVersion) {
-                status = 'not_in_manifest';
-            } else {
-                status = 'not_installed';
-            }
-
-            result.push({ name, description: ext.description || '', git: ext.git || '', requiredVersion, installedVersion, status });
-        }
-    } else {
-        const manifestKeys = Object.keys(manifest);
-        for (const name of manifestKeys) {
-            const ext = registry[name] || {};
-            const requiredVersion = manifest[name] || null;
-            const installedVersion = getInstalledVersion(name);
-
             let status: ExtensionInfo['status'];
             if (!installedVersion) {
                 status = 'not_installed';
-            } else if (requiredVersion && stripV(requiredVersion) === stripV(installedVersion)) {
-                status = 'synced';
-            } else if (requiredVersion) {
-                status = 'need_update';
             } else {
                 status = 'synced';
             }
-
-            result.push({ name, description: ext.description || '', git: ext.git || '', requiredVersion, installedVersion, status });
+            result.push({
+                name,
+                description: ext.description || '',
+                git: ext.git || '',
+                requiredVersion: null,
+                installedVersion,
+                status,
+            });
+        }
+    } else {
+        for (const name of getInstalledExtensionFolderNames()) {
+            const ext = registry[name];
+            const inRegistry = !!ext;
+            const installedVersion = getInstalledVersion(name);
+            let status: ExtensionInfo['status'];
+            if (!installedVersion) {
+                status = 'not_installed';
+            } else if (!inRegistry) {
+                status = 'not_in_manifest';
+            } else {
+                status = 'synced';
+            }
+            result.push({
+                name,
+                description: ext?.description || '',
+                git: ext?.git || '',
+                requiredVersion: null,
+                installedVersion,
+                status,
+            });
         }
     }
 
@@ -401,42 +426,6 @@ async function runManagerCommand(args: string): Promise<{ success: boolean; outp
         return { success: true, output: stdout.trim() };
     } catch (err: any) {
         return { success: false, output: err.message || String(err) };
-    }
-}
-
-// ─── 从模板同步 extensions.json ──────────────────────────
-
-/** 以 extensions.template.json 为唯一来源同步 extensions.json。
- *  仅在首次启动且 extensions.json 不存在时生成清单。 */
-function syncManifestFromTemplate(): void {
-    const manifestPath = getManifestPath();
-    const templatePath = path.join(getPluginDir(), 'extensions.template.json');
-
-    // 如果项目清单已经存在，不再强制覆盖，尊重用户修改
-    if (fs.existsSync(manifestPath)) {
-        return;
-    }
-
-    if (!fs.existsSync(templatePath)) {
-        fs.writeFileSync(manifestPath, '{}' + '\n', 'utf-8');
-        console.log(`[extensions-manager] 模板不存在，已创建空 extensions.json`);
-        return;
-    }
-
-    try {
-        const template = readJSON(templatePath);
-        if (!template || typeof template !== 'object') {
-            fs.writeFileSync(manifestPath, '{}' + '\n', 'utf-8');
-            return;
-        }
-
-        writeJSON(manifestPath, template);
-        console.log(`[extensions-manager] 首次启动，已从模板生成 extensions.json（${Object.keys(template).length} 个扩展）`);
-    } catch (err: any) {
-        console.warn(`[extensions-manager] 模板生成失败: ${err.message}`);
-        if (!fs.existsSync(manifestPath)) {
-            fs.writeFileSync(manifestPath, '{}' + '\n', 'utf-8');
-        }
     }
 }
 
@@ -656,9 +645,7 @@ async function fallbackInstall(nameWithVersion: string): Promise<{ success: bool
         });
         console.log(`[extensions-manager] git clone 完成`);
 
-        // 更新 extensions.json
         const installedVer = version || getInstalledVersion(name) || 'latest';
-        updateManifest(name, installedVer);
 
         return { success: true, output: `${name}@${installedVer} 安装成功 (git clone)` };
     } catch (err: any) {
@@ -673,8 +660,6 @@ async function fallbackUninstall(name: string): Promise<{ success: boolean; outp
         if (fs.existsSync(extDir)) {
             fs.rmSync(extDir, { recursive: true, force: true });
         }
-        // 从 extensions.json 中移除
-        updateManifest(name, null);
         return { success: true, output: `${name} 已卸载` };
     } catch (err: any) {
         return { success: false, output: `卸载失败: ${err.message || String(err)}` };
@@ -682,17 +667,17 @@ async function fallbackUninstall(name: string): Promise<{ success: boolean; outp
 }
 
 async function fallbackSync(): Promise<{ success: boolean; output: string }> {
-    const manifest = readJSON(getManifestPath()) || {};
-    const names = Object.keys(manifest);
+    const registry = readJSON(getRegistryPath()) || {};
+    const names = getInstalledExtensionFolderNames().filter((n) => registry[n]);
     if (names.length === 0) {
-        return { success: true, output: '无需同步（extensions.json 为空）' };
+        return { success: true, output: '无需同步（无已安装且在注册表内的扩展）' };
     }
 
     const results: string[] = [];
     let allOk = true;
 
     for (const name of names) {
-        const version = manifest[name];
+        const version = getInstalledVersion(name);
         const target = version ? `${name}@${version}` : name;
         const r = await fallbackInstall(target);
         results.push(`${r.success ? '✓' : '✗'} ${target}: ${r.output}`);
@@ -700,18 +685,6 @@ async function fallbackSync(): Promise<{ success: boolean; output: string }> {
     }
 
     return { success: allOk, output: results.join('\n') };
-}
-
-/** 更新 extensions.json 中的某个扩展版本。version 为 null 时删除条目 */
-function updateManifest(name: string, version: string | null): void {
-    const manifestPath = getManifestPath();
-    const manifest = readJSON(manifestPath) || {};
-    if (version === null) {
-        delete manifest[name];
-    } else {
-        manifest[name] = version;
-    }
-    writeJSON(manifestPath, manifest);
 }
 
 /** 判断是否有外部 manager 脚本可用 */
@@ -895,34 +868,22 @@ export const methods: { [key: string]: (...args: any) => any } = {
         return { success: false, output: '当前没有进行中的注册表拉取' };
     },
 
-    /**
-     * 本插件版本信息：与 extensions.json 清单对比（同其他扩展），不请求远程 tag。
-     * 需展示「可更新」时请在清单中写入目标版本/分支名（如 "1.0.4" 或 "main"）。
-     */
+    /** 本插件版本：以 package.json 的 version 为准，并与远程 tag 比较是否有更新 */
     async querySelfInfo(): Promise<ExtensionInfo> {
         const selfName = packageJSON.name as string;
         const registry = readJSON(getRegistryPath()) || {};
-        const manifest = readJSON(getManifestPath()) || {};
         const ext = registry[selfName] || {};
-        const installedVersion = (packageJSON.version as string) || null;
-        const rawReq = manifest[selfName];
-        const requiredVersion: string | null =
-            rawReq !== undefined && rawReq !== null && String(rawReq).trim() !== ''
-                ? String(rawReq).trim()
-                : null;
+        const installedVersion = normalizePkgVersion(packageJSON.version as unknown);
 
-        let status: ExtensionInfo['status'];
-        if (!requiredVersion) {
-            status = 'synced';
-        } else if (!installedVersion) {
-            status = 'not_installed';
-        } else if (stripV(requiredVersion) === stripV(installedVersion)) {
-            status = 'synced';
-        } else {
-            status = 'need_update';
-        }
-
-        return { name: selfName, description: ext.description || '', git: ext.git || '', requiredVersion, installedVersion, status };
+        const base: ExtensionInfo = {
+            name: selfName,
+            description: ext.description || '',
+            git: ext.git || '',
+            requiredVersion: null,
+            installedVersion,
+            status: installedVersion ? 'synced' : 'not_installed',
+        };
+        return attachRemoteUpgradeHint(base);
     },
 
     async openExtensionDir(name: string): Promise<{ success: boolean; output: string }> {
@@ -948,11 +909,6 @@ export const methods: { [key: string]: (...args: any) => any } = {
 export function load() {
     console.log('[extensions-manager] 扩展管理器已加载');
     setTimeout(async () => {
-        try {
-            syncManifestFromTemplate();
-        } catch (err: any) {
-            console.warn('[extensions-manager] 初始化出错:', err.message);
-        }
         // 异步拉取远程 registry.json，不阻塞启动
         try {
             await fetchRemoteRegistry();
