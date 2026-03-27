@@ -1,6 +1,6 @@
 {
     "package_version": 2,
-    "version": "1.0.2",
+    "version": "1.0.3",
     "name": "extensions-manager",
     "description": "i18n:extensions-manager.description",
     "main": "./dist/main.js",
@@ -14,10 +14,10 @@
             "type": "dockable",
             "main": "dist/panels/default",
             "size": {
-                "min-width": 450,
-                "min-height": 400,
-                "width": 680,
-                "height": 550
+                "min-width": 800,
+                "min-height": 420,
+                "width": 960,
+                "height": 580
             }
         }
     },
@@ -70,9 +70,19 @@
                     "refreshRegistry"
                 ]
             },
+            "cancel-fetch-registry": {
+                "methods": [
+                    "cancelFetchRegistry"
+                ]
+            },
             "open-extension-dir": {
                 "methods": [
                     "openExtensionDir"
+                ]
+            },
+            "get-self-info": {
+                "methods": [
+                    "querySelfInfo"
                 ]
             }
         }

@@ -1,30 +1,103 @@
 <div class="ext-manager">
-    <!-- 顶部工具栏 -->
-    <div class="toolbar">
-        <div class="toolbar-left">
-            <h2>wenext扩展管理器</h2>
+    <aside class="sidebar" aria-label="主导航">
+        <div class="sidebar-brand">
+            <div class="brand-icon" aria-hidden="true">
+                <!-- 与设计稿 code.html 一致：Material Symbols 的 extension（拼图）字形；此处为 SVG 以避免加载 Web 字体 -->
+                <svg class="brand-icon-glyph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+                    <path fill="currentColor" d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/>
+                </svg>
+            </div>
+            <div class="brand-text">
+                <span class="brand-name">Manager</span>
+                <span id="sidebar-version" class="brand-version">v</span>
+            </div>
         </div>
-        <div class="toolbar-right">
-            <label class="toggle-label">
-                <input type="checkbox" id="show-all"> 显示全部可用
-            </label>
-            <button id="btn-sync" class="btn btn-primary" title="按 extensions.json 同步全部">同步全部</button>
-            <button id="btn-refresh" class="btn" title="刷新列表">刷新</button>
+        <nav class="sidebar-nav">
+            <div class="nav-item nav-item--active" data-nav="extensions" aria-current="page">
+                <span class="nav-item-icon" aria-hidden="true">◇</span>
+                <span>扩展</span>
+            </div>
+            <button type="button" class="nav-item nav-item--muted" data-nav="updates" disabled title="敬请期待">
+                <span class="nav-item-icon" aria-hidden="true">↻</span>
+                <span>更新</span>
+            </button>
+            <button type="button" class="nav-item nav-item--muted" data-nav="library" disabled title="敬请期待">
+                <span class="nav-item-icon" aria-hidden="true">▤</span>
+                <span>库</span>
+            </button>
+            <button type="button" class="nav-item nav-item--muted" data-nav="settings" disabled title="敬请期待">
+                <span class="nav-item-icon" aria-hidden="true">⚙</span>
+                <span>设置</span>
+            </button>
+        </nav>
+        <footer class="sidebar-footer">
+            <button type="button" class="footer-link" id="nav-scroll-logs" aria-controls="log-panel-wrap" aria-expanded="false" title="显示操作日志区域">显示日志</button>
+            <span class="footer-sep">·</span>
+            <button type="button" class="footer-link" id="nav-help" title="扩展管理器">帮助</button>
+        </footer>
+    </aside>
+
+    <main class="main-pane">
+        <header class="main-header">
+            <div class="search-wrap">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input type="search" id="search-plugins" class="search-input" placeholder="查找插件..." autocomplete="off" spellcheck="false">
+            </div>
+            <div class="header-actions">
+                <label class="filter-toggle" title="显示注册表内全部扩展">
+                    <input type="checkbox" id="show-all" checked>
+                    <span>显示全部</span>
+                </label>
+                <button type="button" id="btn-sync" class="btn btn-toolbar" title="按 extensions.json 同步全部">同步全部</button>
+                <button type="button" id="btn-refresh" class="btn btn-toolbar" title="刷新列表">刷新</button>
+            </div>
+        </header>
+
+        <div id="registry-sync-bar" class="registry-sync-bar" hidden role="status" aria-live="polite">
+            <div class="registry-sync-bar-inner">
+                <span class="registry-sync-spinner" aria-hidden="true"></span>
+                <span id="registry-sync-text" class="registry-sync-text">正在从远程更新扩展注册表…</span>
+                <button type="button" id="registry-sync-cancel" class="btn btn-toolbar btn-registry-cancel" title="终止拉取">取消</button>
+            </div>
+            <div class="registry-sync-progress" aria-hidden="true"><div class="registry-sync-progress-indeterminate"></div></div>
         </div>
+
+        <div id="self-info" class="core-version-row" style="display:none;" role="region" aria-label="核心系统版本"></div>
+
+        <h2 class="section-title">已安装插件</h2>
+
+        <div id="ext-list" class="ext-list">
+            <div class="loading">加载中...</div>
+        </div>
+
+        <div id="log-panel-wrap" class="log-panel-wrap" hidden>
+            <section class="log-section" id="log-section-anchor" aria-label="操作日志">
+                <div class="log-shell">
+                    <div class="log-shell-toolbar">
+                        <button type="button" id="btn-clear-log" class="btn btn-log-clear">清空</button>
+                    </div>
+                    <div id="log-output" class="log-terminal" role="log" aria-live="polite"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="ctx-menu" class="ctx-menu" style="display:none;">
+        <div class="ctx-item" id="ctx-open-dir">打开插件目录</div>
     </div>
 
-    <!-- 扩展列表 -->
-    <div id="ext-list" class="ext-list">
-        <div class="loading">加载中...</div>
-    </div>
-
-    <!-- 底部日志区域 -->
-    <div class="log-section">
-        <div class="log-header">
-            <span>操作日志</span>
-            <button id="btn-clear-log" class="btn btn-small">清空</button>
+    <!-- 设计稿 code.html「Progress Modal Overlay」：用户进行中全屏遮挡 -->
+    <div id="operation-overlay" class="operation-overlay" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="operation-overlay-title">
+        <div class="operation-overlay-card">
+            <div class="operation-overlay-spinner" aria-hidden="true">
+                <div class="operation-overlay-spinner-ring"></div>
+                <div class="operation-overlay-spinner-arc"></div>
+            </div>
+            <div class="operation-overlay-text">
+                <h2 id="operation-overlay-title" class="operation-overlay-title">正在处理...</h2>
+                <p id="operation-overlay-hint" class="operation-overlay-hint">请稍候，操作正在进行中...</p>
+            </div>
         </div>
-        <textarea id="log-output" readonly></textarea>
     </div>
 
     <!-- 右键上下文菜单 -->

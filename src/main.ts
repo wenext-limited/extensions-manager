@@ -3,7 +3,7 @@ import packageJSON from '../package.json';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec, spawn } from 'child_process';
+import { exec, spawn, ChildProcess } from 'child_process';
 
 // ─── 路径工具（延迟获取）───────────────────────────────────
 
@@ -58,35 +58,143 @@ function stripV(version: string): string {
     return version.startsWith('v') ? version.slice(1) : version;
 }
 
-/** 通过 SSH 部分克隆只拉取 registry.json，适用于已配置 SSH 密钥的环境 */
+/** 远程 registry 克隆子进程（可被 cancelFetchRegistry 终止） */
+let registryGitCloneChild: ChildProcess | null = null;
+
+/** 合并并发拉取：load() 延迟任务与面板刷新共享同一次远程 registry 拉取 */
+let registryFetchInFlight: Promise<boolean> | null = null;
+
+/** 首包协商 + 克隆主体 */
+const REGISTRY_GIT_CLONE_TIMEOUT_MS = 120000;
+/** sparse-checkout / checkout 等轻量步骤 */
+const REGISTRY_GIT_LIGHT_STEP_TIMEOUT_MS = 60000;
+
+function getRegistryGitEnv(): NodeJS.ProcessEnv {
+    return {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
+    };
+}
+
+/** 单条 git 命令（spawn + 可 kill + 超时），供注册表拉取复用 */
+function runGitCommand(gitArgs: string[], options: { cwd?: string; timeoutMs?: number } = {}): Promise<void> {
+    const timeoutMs = options.timeoutMs ?? REGISTRY_GIT_CLONE_TIMEOUT_MS;
+    return new Promise((resolve, reject) => {
+        const child = spawn('git', gitArgs, {
+            cwd: options.cwd,
+            env: getRegistryGitEnv(),
+            windowsHide: true,
+            stdio: ['ignore', 'ignore', 'pipe'],
+        });
+        registryGitCloneChild = child;
+        let stderr = '';
+        child.stderr?.on('data', (chunk: Buffer) => {
+            stderr += String(chunk);
+        });
+        const killTimer = setTimeout(() => {
+            try {
+                child.kill('SIGTERM');
+            } catch {
+                /* ignore */
+            }
+            setTimeout(() => {
+                try {
+                    child.kill('SIGKILL');
+                } catch {
+                    /* ignore */
+                }
+            }, 4000);
+        }, timeoutMs);
+        const detach = () => {
+            clearTimeout(killTimer);
+            if (registryGitCloneChild === child) {
+                registryGitCloneChild = null;
+            }
+        };
+        child.on('error', (err) => {
+            detach();
+            reject(err);
+        });
+        child.on('close', (code, signal) => {
+            detach();
+            if (code === 0) {
+                resolve();
+            } else {
+                const hint = signal ? ` (signal ${signal})` : '';
+                reject(new Error((stderr.trim() || `git 退出码 ${code}`) + hint));
+            }
+        });
+    });
+}
+
+/** 无 filter 的浅克隆整仓（Git 过旧或不支持部分克隆时回退） */
+function gitCloneRegistryShallow(repoUrl: string, destDir: string): Promise<void> {
+    return runGitCommand(['clone', '--depth', '1', '--no-tags', repoUrl, destDir]);
+}
+
+/**
+ * 部分克隆 + sparse-checkout 仅检出仓库根目录的 registry.json（需 Git 支持 --filter=blob:none，GitHub SSH 可用）。
+ * 相较整仓浅克隆，通常显著减少传输量与耗时。
+ */
+async function gitSparseFetchRegistryJsonOnly(repoUrl: string, destDir: string): Promise<void> {
+    await runGitCommand(
+        ['clone', '--depth', '1', '--no-tags', '--filter=blob:none', '--no-checkout', repoUrl, destDir],
+        { timeoutMs: REGISTRY_GIT_CLONE_TIMEOUT_MS },
+    );
+    await runGitCommand(['sparse-checkout', 'init', '--no-cone'], {
+        cwd: destDir,
+        timeoutMs: REGISTRY_GIT_LIGHT_STEP_TIMEOUT_MS,
+    });
+    await runGitCommand(['sparse-checkout', 'set', '/registry.json'], {
+        cwd: destDir,
+        timeoutMs: REGISTRY_GIT_LIGHT_STEP_TIMEOUT_MS,
+    });
+    await runGitCommand(['checkout'], { cwd: destDir, timeoutMs: REGISTRY_GIT_LIGHT_STEP_TIMEOUT_MS });
+}
+
+/** 通过 SSH：优先部分克隆仅拉 registry.json，失败则降级为整仓浅克隆 */
 async function fetchRegistryViaSSH(): Promise<string> {
     const tmpDir = path.join(os.tmpdir(), `ext-reg-${Date.now()}`);
-    const repoSshUrl = 'git@github.com:wenext-limited/extensions-manager.git';
+    const reg = readJSON(getRegistryPath()) || {};
+    const selfEntry = reg[packageJSON.name as string];
+    const repoSshUrl = selfEntry?.git && String(selfEntry.git).trim();
+    if (!repoSshUrl) {
+        throw new Error('本地 registry.json 中未配置本插件的 git 地址，无法拉取远程注册表');
+    }
     try {
-        // --filter=blob:none: 跳过下载文件内容，只拉树结构；按需懒加载 blob
-        // --sparse: 仅检出根目录文件（registry.json 在根目录，会被懒加载下来）
-        // --depth 1: 浅克隆，不拉历史
-        await execAsync(
-            `git clone --filter=blob:none --sparse --depth 1 --no-tags "${repoSshUrl}" "${tmpDir}"`,
-            { timeout: 30000 },
-        );
+        try {
+            await gitSparseFetchRegistryJsonOnly(repoSshUrl, tmpDir);
+        } catch (sparseErr: any) {
+            const msg = String(sparseErr?.message || sparseErr || '');
+            console.warn(`[extensions-manager] 部分克隆 registry 失败，降级整仓浅克隆: ${msg}`);
+            try {
+                fs.rmSync(tmpDir, { recursive: true, force: true });
+            } catch {
+                /* ignore */
+            }
+            await gitCloneRegistryShallow(repoSshUrl, tmpDir);
+        }
         const regPath = path.join(tmpDir, 'registry.json');
         if (!fs.existsSync(regPath)) throw new Error('registry.json not found in cloned repo');
         return fs.readFileSync(regPath, 'utf-8');
     } finally {
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        try {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+            /* ignore */
+        }
     }
 }
 
-/** 从 GitHub 拉取最新 registry.json 并写入本地（仅 SSH） */
-async function fetchRemoteRegistry(): Promise<boolean> {
+async function fetchRemoteRegistryOnce(): Promise<boolean> {
     let text = '';
     try {
         text = (await fetchRegistryViaSSH()).trim();
-        console.log('[extensions-manager] 通过 SSH git clone 拉取 registry 成功');
+        console.log('[extensions-manager] 通过 SSH 拉取远程 registry.json 成功');
     } catch (err: any) {
-        console.warn(`[extensions-manager] SSH git clone 拉取失败: ${err.message || err}`);
-        console.warn('[extensions-manager] 仅支持 SSH 拉取，已回退到本地 registry.json');
+        console.warn(`[extensions-manager] SSH 拉取远程 registry 失败: ${err.message || err}`);
+        console.warn('[extensions-manager] 已保留本地 registry.json');
         return false;
     }
 
@@ -103,6 +211,34 @@ async function fetchRemoteRegistry(): Promise<boolean> {
         console.warn(`[extensions-manager] 解析远程 registry.json 失败: ${err.message || err}`);
         return false;
     }
+}
+
+/** 从远程拉取最新 registry.json 并写入本地（仅 SSH）；并发调用合并为单次克隆 */
+async function fetchRemoteRegistry(): Promise<boolean> {
+    if (registryFetchInFlight) {
+        return registryFetchInFlight;
+    }
+    const task = fetchRemoteRegistryOnce();
+    registryFetchInFlight = task;
+    try {
+        return await task;
+    } finally {
+        if (registryFetchInFlight === task) {
+            registryFetchInFlight = null;
+        }
+    }
+}
+
+function cancelRegistryGitClone(): boolean {
+    const ch = registryGitCloneChild;
+    if (!ch) return false;
+    try {
+        ch.kill('SIGKILL');
+    } catch {
+        /* ignore */
+    }
+    registryGitCloneChild = null;
+    return true;
 }
 
 /** 将 exec 包装为 Promise（异步，不阻塞主进程） */
@@ -248,40 +384,61 @@ function syncManifestFromTemplate(): void {
     }
 }
 
-// ─── Tags 缓存（5 分钟有效期）────────────────────────────
+// ─── 远程版本引用（仅 ls-remote，无 clone）────────────────
 
-const TAGS_CACHE_TTL = 5 * 60 * 1000;
-const tagsCache = new Map<string, { tags: string[]; time: number }>();
+const REMOTE_REFS_CACHE_TTL = 5 * 60 * 1000;
+const headsCache = new Map<string, { heads: string[]; time: number }>();
 
-/** 异步获取远程 tags */
-async function fetchRemoteTags(gitUrl: string): Promise<string[]> {
+/** 仅获取远程分支名（git ls-remote --heads），一般比拉全量 tag 列表更快、更省 */
+async function fetchRemoteHeads(gitUrl: string): Promise<string[]> {
     try {
-        const { stdout } = await execAsync(`git ls-remote --tags --sort=-v:refname "${gitUrl}"`, {
+        const { stdout } = await execAsync(`git ls-remote --heads "${gitUrl}"`, {
             timeout: 30000,
         });
-        const tags: string[] = [];
+        const heads: string[] = [];
         for (const line of stdout.trim().split('\n')) {
-            if (!line || line.includes('^{}')) continue;
-            const ref = line.split('\t')[1];
-            if (ref) {
-                tags.push(ref.replace('refs/tags/', ''));
+            if (!line) continue;
+            const tab = line.indexOf('\t');
+            if (tab === -1) continue;
+            const ref = line.slice(tab + 1).trim();
+            if (ref.startsWith('refs/heads/')) {
+                heads.push(ref.slice('refs/heads/'.length));
             }
         }
-        return tags;
+        return heads;
     } catch {
         return [];
     }
 }
 
-/** 带缓存的 fetchTags */
-async function fetchTagsCached(name: string, gitUrl: string): Promise<string[]> {
-    const cached = tagsCache.get(name);
-    if (cached && (Date.now() - cached.time) < TAGS_CACHE_TTL) {
-        return cached.tags;
+function sortRemoteHeads(heads: string[]): string[] {
+    const priority = ['main', 'master', 'develop', 'dev'];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const p of priority) {
+        if (heads.includes(p)) {
+            out.push(p);
+            seen.add(p);
+        }
     }
-    const tags = await fetchRemoteTags(gitUrl);
-    tagsCache.set(name, { tags, time: Date.now() });
-    return tags;
+    for (const h of [...heads].sort((a, b) => a.localeCompare(b))) {
+        if (!seen.has(h)) {
+            out.push(h);
+            seen.add(h);
+        }
+    }
+    return out;
+}
+
+/** 带缓存的远程分支列表（所有扩展版本下拉的远程选项，含本插件） */
+async function fetchHeadsCached(name: string, gitUrl: string): Promise<string[]> {
+    const cached = headsCache.get(name);
+    if (cached && Date.now() - cached.time < REMOTE_REFS_CACHE_TTL) {
+        return cached.heads;
+    }
+    const heads = sortRemoteHeads(await fetchRemoteHeads(gitUrl));
+    headsCache.set(name, { heads, time: Date.now() });
+    return heads;
 }
 
 // ─── 自升级逻辑 ──────────────────────────────────────────
@@ -634,15 +791,15 @@ export const methods: { [key: string]: (...args: any) => any } = {
         return result;
     },
 
-    /** 获取指定扩展的所有可用版本 (git tags)，带缓存 */
+    /** 获取指定扩展的远程分支名（仅 ls-remote --heads，无 clone；所有扩展含本仓库一致） */
     async fetchTags(name: string): Promise<string[]> {
         const registry = readJSON(getRegistryPath()) || {};
         const ext = registry[name];
         if (!ext || !ext.git) return [];
-        console.log(`[extensions-manager] 获取 ${name} 的版本列表...`);
-        const tags = await fetchTagsCached(name, ext.git);
-        console.log(`[extensions-manager] ${name} 共 ${tags.length} 个版本`);
-        return tags;
+        console.log(`[extensions-manager] 获取 ${name} 的远程分支列表...`);
+        const heads = await fetchHeadsCached(name, ext.git);
+        console.log(`[extensions-manager] ${name} 共 ${heads.length} 个分支`);
+        return heads;
     },
 
     /** 手动刷新远程注册表 */
@@ -653,6 +810,44 @@ export const methods: { [key: string]: (...args: any) => any } = {
             return { success: true, output: `注册表已更新（${Object.keys(registry).length} 个扩展）` };
         }
         return { success: false, output: '拉取远程注册表失败，使用本地缓存' };
+    },
+
+    /** 终止进行中的 registry git 子进程（供面板「取消 / 超时」调用） */
+    cancelFetchRegistry(): { success: boolean; output: string } {
+        if (cancelRegistryGitClone()) {
+            return { success: true, output: '已终止注册表拉取' };
+        }
+        return { success: false, output: '当前没有进行中的注册表拉取' };
+    },
+
+    /**
+     * 本插件版本信息：与 extensions.json 清单对比（同其他扩展），不请求远程 tag。
+     * 需展示「可更新」时请在清单中写入目标版本/分支名（如 "1.0.4" 或 "main"）。
+     */
+    async querySelfInfo(): Promise<ExtensionInfo> {
+        const selfName = packageJSON.name as string;
+        const registry = readJSON(getRegistryPath()) || {};
+        const manifest = readJSON(getManifestPath()) || {};
+        const ext = registry[selfName] || {};
+        const installedVersion = (packageJSON.version as string) || null;
+        const rawReq = manifest[selfName];
+        const requiredVersion: string | null =
+            rawReq !== undefined && rawReq !== null && String(rawReq).trim() !== ''
+                ? String(rawReq).trim()
+                : null;
+
+        let status: ExtensionInfo['status'];
+        if (!requiredVersion) {
+            status = 'synced';
+        } else if (!installedVersion) {
+            status = 'not_installed';
+        } else if (stripV(requiredVersion) === stripV(installedVersion)) {
+            status = 'synced';
+        } else {
+            status = 'need_update';
+        }
+
+        return { name: selfName, description: ext.description || '', git: ext.git || '', requiredVersion, installedVersion, status };
     },
 
     async openExtensionDir(name: string): Promise<{ success: boolean; output: string }> {
@@ -695,3 +890,6 @@ export function load() {
 export function unload() {
     console.log('[extensions-manager] 扩展管理器已卸载');
 }
+
+/** 部分编辑器版本会从 default 合并 methods，与命名 exports 一并提供 */
+export default { methods, load, unload };
