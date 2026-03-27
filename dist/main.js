@@ -335,6 +335,63 @@ function getExtensionList(all) {
     }
     return result;
 }
+/** 比较 semver（仅当二者都能解析为 x.y.z / vx.y.z 时严格比较，否则回退字符串） */
+function semverCompare(a, b) {
+    const ta = parseSemverTuple(a);
+    const tb = parseSemverTuple(b);
+    if (ta && tb) {
+        if (ta[0] !== tb[0])
+            return ta[0] - tb[0];
+        if (ta[1] !== tb[1])
+            return ta[1] - tb[1];
+        return ta[2] - tb[2];
+    }
+    return stripV(a).localeCompare(stripV(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+/** 在 sortRemoteTags 序中取首个可解析的 semver tag（即当前列表中的最新 semver） */
+function pickLatestSemverTag(tags) {
+    const sorted = sortRemoteTags(tags);
+    for (const t of sorted) {
+        if (parseSemverTuple(t))
+            return t;
+    }
+    return null;
+}
+/**
+ * 若远程最新 semver tag 高于已安装版本则返回该 tag。
+ * 已安装版本无法解析为 semver 时不做判断（避免误判）。
+ */
+function remoteSemverNewerThanInstalled(installedVersion, tags) {
+    if (!installedVersion || !parseSemverTuple(installedVersion))
+        return null;
+    const latest = pickLatestSemverTag(tags);
+    if (!latest)
+        return null;
+    return semverCompare(latest, installedVersion) > 0 ? latest : null;
+}
+async function attachRemoteUpgradeHint(info) {
+    var _a;
+    if (!info.installedVersion || !info.git)
+        return info;
+    try {
+        const tags = await fetchTagsCached(info.name, info.git);
+        const remoteNewer = remoteSemverNewerThanInstalled(info.installedVersion, tags);
+        if (!remoteNewer)
+            return Object.assign(Object.assign({}, info), { remoteLatestVersion: null });
+        let { status } = info;
+        if (status === 'synced' || status === 'not_in_manifest') {
+            status = 'need_update';
+        }
+        return Object.assign(Object.assign({}, info), { status, remoteLatestVersion: remoteNewer });
+    }
+    catch (_b) {
+        return Object.assign(Object.assign({}, info), { remoteLatestVersion: (_a = info.remoteLatestVersion) !== null && _a !== void 0 ? _a : null });
+    }
+}
+async function getExtensionListAsync(all) {
+    const base = getExtensionList(all);
+    return Promise.all(base.map((item) => attachRemoteUpgradeHint(item)));
+}
 // ─── 异步命令执行 ────────────────────────────────────────
 /** 调用 extensions_manager.js CLI（异步） */
 async function runManagerCommand(args) {
@@ -702,10 +759,10 @@ exports.methods = {
         Editor.Panel.open(package_json_1.default.name);
     },
     async listAll() {
-        return getExtensionList(true);
+        return getExtensionListAsync(true);
     },
     async listProject() {
-        return getExtensionList(false);
+        return getExtensionListAsync(false);
     },
     async installExtension(nameWithVersion) {
         console.log(`[extensions-manager] install ${nameWithVersion}`);

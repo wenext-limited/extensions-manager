@@ -278,6 +278,8 @@ interface ExtensionInfo {
     git: string;
     requiredVersion: string | null;
     installedVersion: string | null;
+    /** 当远程存在比已安装更高的 semver tag 时填入（与 manifest 是否一致无关） */
+    remoteLatestVersion?: string | null;
     status: 'synced' | 'need_update' | 'not_installed' | 'not_in_manifest';
 }
 
@@ -330,6 +332,60 @@ function getExtensionList(all: boolean): ExtensionInfo[] {
     }
 
     return result;
+}
+
+/** 比较 semver（仅当二者都能解析为 x.y.z / vx.y.z 时严格比较，否则回退字符串） */
+function semverCompare(a: string, b: string): number {
+    const ta = parseSemverTuple(a);
+    const tb = parseSemverTuple(b);
+    if (ta && tb) {
+        if (ta[0] !== tb[0]) return ta[0] - tb[0];
+        if (ta[1] !== tb[1]) return ta[1] - tb[1];
+        return ta[2] - tb[2];
+    }
+    return stripV(a).localeCompare(stripV(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/** 在 sortRemoteTags 序中取首个可解析的 semver tag（即当前列表中的最新 semver） */
+function pickLatestSemverTag(tags: string[]): string | null {
+    const sorted = sortRemoteTags(tags);
+    for (const t of sorted) {
+        if (parseSemverTuple(t)) return t;
+    }
+    return null;
+}
+
+/**
+ * 若远程最新 semver tag 高于已安装版本则返回该 tag。
+ * 已安装版本无法解析为 semver 时不做判断（避免误判）。
+ */
+function remoteSemverNewerThanInstalled(installedVersion: string, tags: string[]): string | null {
+    if (!installedVersion || !parseSemverTuple(installedVersion)) return null;
+    const latest = pickLatestSemverTag(tags);
+    if (!latest) return null;
+    return semverCompare(latest, installedVersion) > 0 ? latest : null;
+}
+
+async function attachRemoteUpgradeHint(info: ExtensionInfo): Promise<ExtensionInfo> {
+    if (!info.installedVersion || !info.git) return info;
+    try {
+        const tags = await fetchTagsCached(info.name, info.git);
+        const remoteNewer = remoteSemverNewerThanInstalled(info.installedVersion, tags);
+        if (!remoteNewer) return { ...info, remoteLatestVersion: null };
+
+        let { status } = info;
+        if (status === 'synced' || status === 'not_in_manifest') {
+            status = 'need_update';
+        }
+        return { ...info, status, remoteLatestVersion: remoteNewer };
+    } catch {
+        return { ...info, remoteLatestVersion: info.remoteLatestVersion ?? null };
+    }
+}
+
+async function getExtensionListAsync(all: boolean): Promise<ExtensionInfo[]> {
+    const base = getExtensionList(all);
+    return Promise.all(base.map((item) => attachRemoteUpgradeHint(item)));
 }
 
 // ─── 异步命令执行 ────────────────────────────────────────
@@ -724,11 +780,11 @@ export const methods: { [key: string]: (...args: any) => any } = {
     },
 
     async listAll(): Promise<ExtensionInfo[]> {
-        return getExtensionList(true);
+        return getExtensionListAsync(true);
     },
 
     async listProject(): Promise<ExtensionInfo[]> {
-        return getExtensionList(false);
+        return getExtensionListAsync(false);
     },
 
     async installExtension(nameWithVersion: string): Promise<{ success: boolean; output: string }> {

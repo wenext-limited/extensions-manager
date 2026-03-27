@@ -8,6 +8,31 @@ const pkgJson = require('../../../package.json');
 const OPERATION_OVERLAY_TIMEOUT_MS = 10 * 60 * 1000;
 /** 远程注册表进度条：超时后请求主进程终止 git，避免无限等待 */
 const REGISTRY_SYNC_UI_TIMEOUT_MS = 90 * 1000;
+function versionNorm(v) {
+    const t = v.trim();
+    if (!t)
+        return '';
+    return t.startsWith('v') ? t.slice(1) : t;
+}
+/** 可更新时的推荐目标：优先 manifest 与本地不一致时的清单版本，否则用远程较新版本 */
+function getUpgradeTarget(ext) {
+    var _a, _b;
+    if (ext.status !== 'need_update')
+        return null;
+    const req = ((_a = ext.requiredVersion) === null || _a === void 0 ? void 0 : _a.trim()) || '';
+    const ins = ((_b = ext.installedVersion) === null || _b === void 0 ? void 0 : _b.trim()) || '';
+    if (req && ins && versionNorm(req) !== versionNorm(ins))
+        return ext.requiredVersion || null;
+    if (ext.remoteLatestVersion)
+        return ext.remoteLatestVersion;
+    return ext.requiredVersion || null;
+}
+function displayVersionLabel(v) {
+    const t = v.trim();
+    if (!t)
+        return '';
+    return t.startsWith('v') ? t : `v${t}`;
+}
 /** 图标方格内展示：取扩展名的首字母（ASCII 大写；中文取首字） */
 function extensionNameInitial(name) {
     const t = name.trim();
@@ -521,10 +546,13 @@ module.exports = Editor.Panel.define({
             versionBlock.appendChild(vLabel);
             const line = document.createElement('div');
             line.className = 'ext-version-line';
-            const reqNorm = ext.requiredVersion
-                ? (ext.requiredVersion.startsWith('v') ? ext.requiredVersion : `v${ext.requiredVersion}`)
-                : '';
-            if (ext.status === 'need_update' && ext.installedVersion && ext.requiredVersion) {
+            const upgradeTgt = getUpgradeTarget(ext);
+            const reqNorm = upgradeTgt
+                ? displayVersionLabel(upgradeTgt)
+                : ext.requiredVersion
+                    ? displayVersionLabel(ext.requiredVersion)
+                    : '';
+            if (ext.status === 'need_update' && ext.installedVersion && upgradeTgt) {
                 const cur = document.createElement('span');
                 cur.className = 'ext-version-current';
                 cur.textContent = `当前: v${ext.installedVersion}`;
@@ -567,9 +595,10 @@ module.exports = Editor.Panel.define({
             if (ext.status === 'not_installed' || ext.status === 'need_update') {
                 const vSelect = document.createElement('select');
                 vSelect.className = 'version-select';
+                const prefVer = getUpgradeTarget(ext) || ext.requiredVersion || '';
                 const defaultOpt = document.createElement('option');
-                defaultOpt.value = ext.requiredVersion || '';
-                defaultOpt.textContent = ext.requiredVersion || '选择版本';
+                defaultOpt.value = prefVer;
+                defaultOpt.textContent = prefVer || '选择版本';
                 vSelect.appendChild(defaultOpt);
                 actions.appendChild(vSelect);
                 const actionBtn = document.createElement('button');
@@ -581,7 +610,7 @@ module.exports = Editor.Panel.define({
                     this.doInstall(ext.name, ver);
                 });
                 actions.appendChild(actionBtn);
-                this.attachLazyVersionLoader(vSelect, ext.name, ext.requiredVersion);
+                this.attachLazyVersionLoader(vSelect, ext.name, prefVer || ext.requiredVersion);
             }
             if (ext.status === 'need_update' || ext.status === 'synced' || ext.status === 'not_in_manifest') {
                 const removeBtn = document.createElement('button');
