@@ -26,5 +26,9 @@
     "extensions-manager": {
         "description": "extensions-manager",
         "git": "git@github.com:wenext-limited/extensions-manager.git"
+    },
+    "texture-type-fixer": {
+        "description": "texture-type-fixer",
+        "git": "git@github.com:wenext-limited/cocos-texture-type-fixer.git"
     }
 }
