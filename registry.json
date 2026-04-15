@@ -5,7 +5,8 @@
     },
     "game_figma2prefab": {
         "description": "Figma to Cocos Creator prefab converter",
-        "git": "git@github.com:wenext-limited/game_figma2prefab.git"
+        "git": "git@github.com:wenext-limited/game_figma2prefab.git",
+        "subdir": "cocos-plugin/figma2prefab"
     },
     "oops-plugin-excel-to-json": {
         "description": "oops plugin excel to json",
