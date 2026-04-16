@@ -3,10 +3,9 @@
         "description": "playbook-sync-cocos-plugin",
         "git": "git@github.com:wenext-limited/playbook-sync-cocos-plugin.git"
     },
-    "game_figma2prefab": {
+    "figma2prefab": {
         "description": "Figma to Cocos Creator prefab converter",
-        "git": "git@github.com:wenext-limited/game_figma2prefab.git",
-        "subdir": "cocos-plugin/figma2prefab"
+        "git": "git@github.com:wenext-limited/figma2prefab-cocos-plugin.git"
     },
     "oops-plugin-excel-to-json": {
         "description": "oops plugin excel to json",
