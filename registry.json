@@ -34,5 +34,5 @@
     "wenext-cocos-kit": {
         "description": "wenext-cocos-kit",
         "git": "git@github.com:wenext-limited/wenext-cocos-kit.git"
-    },
+    }
 }
