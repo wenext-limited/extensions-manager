@@ -289,6 +289,16 @@ function cancelRegistryGitClone() {
     registryGitCloneChild = null;
     return true;
 }
+/** 绕过 require 缓存，从磁盘实时读取自身 package.json 的 version */
+function readSelfVersion() {
+    try {
+        const raw = JSON.parse(fs.readFileSync(path.join(getPluginDir(), 'package.json'), 'utf-8'));
+        return normalizePkgVersion(raw.version);
+    }
+    catch (_a) {
+        return null;
+    }
+}
 /** 将 exec 包装为 Promise（异步，不阻塞主进程） */
 function execAsync(cmd, options = {}) {
     return new Promise((resolve, reject) => {
@@ -860,7 +870,7 @@ exports.methods = {
         const selfName = package_json_1.default.name;
         const registry = readJSON(getRegistryPath()) || {};
         const ext = registry[selfName] || {};
-        const installedVersion = normalizePkgVersion(package_json_1.default.version);
+        const installedVersion = readSelfVersion();
         const base = {
             name: selfName,
             description: ext.description || '',
