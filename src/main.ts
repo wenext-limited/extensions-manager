@@ -15,8 +15,13 @@ function getProjectRoot(): string {
     return path.resolve(Editor.Project.path);
 }
 
+/** 系统级 wenext 根目录：~/.wenext（Mac/Windows 通用） */
+function getSystemWenextDir(): string {
+    return path.join(os.homedir(), '.wenext');
+}
+
 function getRegistryPath(): string {
-    return path.join(getPluginDir(), 'registry.json');
+    return path.join(getSystemWenextDir(), 'registry.json');
 }
 
 function getExtensionsDir(): string {
@@ -606,6 +611,29 @@ async function safeRemoveDir(dirPath: string, retries = 3): Promise<void> {
     }
 }
 
+/** 系统级扩展缓存目录：~/.wenext/extensions/<name>（跨项目共享，含 .git） */
+function getSystemCacheDir(): string {
+    return path.join(getSystemWenextDir(), 'extensions');
+}
+
+/** 将目录递归拷贝到目标，跳过 exclude 中的文件/目录名 */
+function copyDirExcluding(src: string, dest: string, exclude: string[]): void {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const ent of fs.readdirSync(src, { withFileTypes: true })) {
+        if (exclude.includes(ent.name)) continue;
+        const srcPath = path.join(src, ent.name);
+        const destPath = path.join(dest, ent.name);
+        if (ent.isDirectory()) {
+            copyDirExcluding(srcPath, destPath, exclude);
+        } else if (ent.isSymbolicLink()) {
+            try { fs.unlinkSync(destPath); } catch { /* ignore */ }
+            fs.symlinkSync(fs.readlinkSync(srcPath), destPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
 async function fallbackInstall(nameWithVersion: string): Promise<{ success: boolean; output: string }> {
     const { name, version } = parseNameVersion(nameWithVersion);
     const registry = readJSON(getRegistryPath()) || {};
@@ -615,17 +643,45 @@ async function fallbackInstall(nameWithVersion: string): Promise<{ success: bool
     }
 
     const extDir = path.join(getExtensionsDir(), name);
+    const cacheDir = path.join(getSystemCacheDir(), name);
     const gitUrl = ext.git;
 
     try {
-        // 确保 extensions 目录存在
-        if (!fs.existsSync(getExtensionsDir())) {
-            fs.mkdirSync(getExtensionsDir(), { recursive: true });
-        }
+        // ── Step 1：更新系统级缓存（带 .git，跨项目共享） ────────────────────
+        fs.mkdirSync(getSystemCacheDir(), { recursive: true });
 
+        if (fs.existsSync(cacheDir)) {
+            console.log(`[extensions-manager] 系统缓存已存在，更新版本: ${cacheDir}`);
+            if (version) {
+                await execAsync(
+                    `git -C "${cacheDir}" fetch --depth 1 origin "refs/tags/${version}:refs/tags/${version}"`,
+                    { timeout: 120000 }
+                );
+                await execAsync(
+                    `git -C "${cacheDir}" -c advice.detachedHead=false checkout --force "${version}"`,
+                    { timeout: 30000 }
+                );
+            } else {
+                // 无指定版本：拉取最新 HEAD
+                await execAsync(`git -C "${cacheDir}" fetch --depth 1 origin`, { timeout: 120000 });
+                await execAsync(
+                    `git -C "${cacheDir}" -c advice.detachedHead=false checkout --force FETCH_HEAD`,
+                    { timeout: 30000 }
+                );
+            }
+        } else {
+            // 首次安装：clone 到系统缓存
+            console.log(`[extensions-manager] 首次缓存，git clone: ${cacheDir}`);
+            const cloneCmd = version
+                ? `git clone --branch "${version}" --depth 1 "${gitUrl}" "${cacheDir}"`
+                : `git clone --depth 1 "${gitUrl}" "${cacheDir}"`;
+            await execAsync(cloneCmd, { timeout: 120000 });
+        }
+        console.log(`[extensions-manager] 系统缓存更新完成`);
+
+        // ── Step 2：禁用并清除项目目录旧版本 ────────────────────────────────
         if (fs.existsSync(extDir)) {
-            // 更新前先通知编辑器禁用扩展，释放文件锁
-            console.log(`[extensions-manager] ${name} 目录已存在，先禁用扩展再删除`);
+            console.log(`[extensions-manager] ${name} 目录已存在，先禁用扩展`);
             try {
                 await Editor.Package.disable(extDir, {});
                 await Editor.Package.unregister(extDir);
@@ -633,28 +689,18 @@ async function fallbackInstall(nameWithVersion: string): Promise<{ success: bool
             } catch (e: any) {
                 console.warn(`[extensions-manager] 禁用 ${name} 时出错 (继续): ${e.message || e}`);
             }
-            // 等待文件锁释放
             await new Promise(resolve => setTimeout(resolve, 800));
-
-            console.log(`[extensions-manager] 删除旧目录: ${extDir}`);
             await safeRemoveDir(extDir);
             console.log(`[extensions-manager] 旧目录已删除`);
         }
 
-        // 新安装 / 更新：clone 指定版本
-        const cloneCmd = version
-            ? `git clone --branch "${version}" --depth 1 "${gitUrl}" "${extDir}"`
-            : `git clone --depth 1 "${gitUrl}" "${extDir}"`;
-        console.log(`[extensions-manager] 执行: ${cloneCmd}`);
-        await execAsync(cloneCmd, {
-            cwd: getProjectRoot(),
-            timeout: 120000,
-        });
-        console.log(`[extensions-manager] git clone 完成`);
+        // ── Step 3：从缓存拷贝到项目（不含 .git / node_modules） ────────────
+        console.log(`[extensions-manager] 从系统缓存拷贝: ${cacheDir} → ${extDir}`);
+        copyDirExcluding(cacheDir, extDir, ['.git', 'node_modules']);
+        console.log(`[extensions-manager] 拷贝完成`);
 
         const installedVer = version || getInstalledVersion(name) || 'latest';
-
-        return { success: true, output: `${name}@${installedVer} 安装成功 (git clone)` };
+        return { success: true, output: `${name}@${installedVer} 安装成功` };
     } catch (err: any) {
         return { success: false, output: `安装失败: ${err.message || String(err)}` };
     }
@@ -662,7 +708,6 @@ async function fallbackInstall(nameWithVersion: string): Promise<{ success: bool
 
 async function fallbackUninstall(name: string): Promise<{ success: boolean; output: string }> {
     const extDir = path.join(getExtensionsDir(), name);
-
     try {
         if (fs.existsSync(extDir)) {
             fs.rmSync(extDir, { recursive: true, force: true });
@@ -875,6 +920,22 @@ export const methods: { [key: string]: (...args: any) => any } = {
 
 export function load() {
     console.log('[extensions-manager] 扩展管理器已加载');
+
+    // 确保系统目录存在，首次运行时从插件内置 registry.json 初始化
+    try {
+        fs.mkdirSync(getSystemWenextDir(), { recursive: true });
+        const sysRegistry = getRegistryPath();
+        if (!fs.existsSync(sysRegistry)) {
+            const bundled = path.join(getPluginDir(), 'registry.json');
+            if (fs.existsSync(bundled)) {
+                fs.copyFileSync(bundled, sysRegistry);
+                console.log('[extensions-manager] 已从内置配置初始化系统注册表');
+            }
+        }
+    } catch (err: any) {
+        console.warn('[extensions-manager] 初始化系统目录失败:', err.message);
+    }
+
     setTimeout(async () => {
         // 异步拉取远程 registry.json，不阻塞启动
         try {
